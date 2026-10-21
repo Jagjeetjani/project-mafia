@@ -1,0 +1,17 @@
+{
+  "name": "Project Mafia — Business Manager",
+  "short_name": "Project Mafia",
+  "description": "Business Management Software for Ready-Made Projects & Components",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#7e14ff",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

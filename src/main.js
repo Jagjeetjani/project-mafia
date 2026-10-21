@@ -1,0 +1,703 @@
+/**
+ * Project Mafia — Main Application Entry Point
+ * Routing, Quick Add, Global Search, Notifications, Database Seeding
+ * Enhanced with Porter Batches, Mutual Dropdown Closing & Wholesaler Sync
+ */
+import { initDB, getAll, bulkAdd, count, add, clearStore, resetProjectOrdersToSeed, resetMaterialOrdersToSeed } from './db.js';
+import { renderDashboard, initDashboard } from './pages/dashboard.js';
+import { renderProjectOrders, initProjectOrders, openProjectModal } from './pages/projects.js';
+import { renderMaterialOrders, initMaterialOrders, openMaterialModal } from './pages/materials.js';
+import { renderPorterBatches, initPorterBatches, openBatchModal } from './pages/porterBatches.js';
+import { renderCustomers, initCustomers, openCustomerModal } from './pages/customers.js';
+import { renderInvoices, initInvoices, openCreateInvoiceModal } from './pages/invoices.js';
+import { renderImportExport, initImportExport } from './pages/importExport.js';
+import { seedProjectOrders, seedMaterialOrders, seedPorterBatches } from './seedData.js';
+import { showToast, formatCurrency, formatDate, cleanCustomerName } from './utils.js';
+
+// Route Definitions
+const routes = {
+  dashboard: { render: renderDashboard, init: initDashboard, title: 'Dashboard' },
+  projects: { render: renderProjectOrders, init: initProjectOrders, title: 'Project Orders' },
+  materials: { render: renderMaterialOrders, init: initMaterialOrders, title: 'Material Orders' },
+  batches: { render: renderPorterBatches, init: initPorterBatches, title: 'Porter Delivery Batches' },
+  customers: { render: renderCustomers, init: initCustomers, title: 'Customers' },
+  invoices: { render: renderInvoices, init: initInvoices, title: 'Invoices' },
+  import: { render: renderImportExport, init: initImportExport, title: 'Import / Export' },
+};
+
+let currentPage = 'dashboard';
+
+// Initialize Application
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await initDB();
+    await checkAndSeedDatabase();
+    await updateSidebarBadges();
+    setupNavigation();
+    setupGlobalSearch();
+    setupQuickAdd();
+    setupNotifications();
+    setupSidebarToggle();
+    setupKeyboardShortcuts();
+
+    // Check URL hash for initial route
+    const hash = window.location.hash.replace('#', '').trim();
+    if (routes[hash]) {
+      navigate(hash);
+    } else {
+      navigate('dashboard');
+    }
+
+    // Update storage status indicator
+    const storageEl = document.getElementById('storage-status');
+    if (storageEl) {
+      storageEl.innerHTML = `<span style="color:var(--text-success);font-weight:600">● 33 Projects & 40 Materials Active</span>`;
+    }
+  } catch (err) {
+    console.error('Initialization error:', err);
+    showToast('Failed to initialize database: ' + err.message, 'error');
+  }
+});
+
+/**
+ * Check if DB is empty or needs update to verified 33 projects and 40 material records with clean names
+ */
+async function checkAndSeedDatabase() {
+  const pCount = await count('projectOrders');
+  const mCount = await count('materialOrders');
+  const bCount = await count('porterBatches');
+  const pVerified = localStorage.getItem('pm_verified_33_orders');
+  const mVerified = localStorage.getItem('pm_verified_40_materials');
+  const namesCleaned = localStorage.getItem('pm_cleaned_names_v3');
+
+  if (pCount === 0 && mCount === 0) {
+    console.log('Seeding initial business records from spreadsheets...');
+    await bulkAdd('projectOrders', JSON.parse(JSON.stringify(seedProjectOrders)));
+    await bulkAdd('materialOrders', JSON.parse(JSON.stringify(seedMaterialOrders)));
+    await syncCustomerDirectory(true);
+    localStorage.setItem('pm_verified_33_orders', 'true');
+    localStorage.setItem('pm_verified_40_materials', 'true');
+    localStorage.setItem('pm_cleaned_names_v3', 'true');
+  } else if (namesCleaned !== 'true' || pCount < 33 || mCount < 40) {
+    console.log('Migrating and synchronizing clean names without spreadsheet suffixes and relational links...');
+    await resetProjectOrdersToSeed(seedProjectOrders);
+    await resetMaterialOrdersToSeed(seedMaterialOrders);
+    await syncCustomerDirectory(true);
+    localStorage.setItem('pm_verified_33_orders', 'true');
+    localStorage.setItem('pm_verified_40_materials', 'true');
+    localStorage.setItem('pm_cleaned_names_v3', 'true');
+  }
+
+  // Seed Porter Batches if empty
+  if (bCount === 0 && seedPorterBatches && seedPorterBatches.length > 0) {
+    console.log('Seeding initial Porter Batches...');
+    await bulkAdd('porterBatches', JSON.parse(JSON.stringify(seedPorterBatches)));
+  }
+}
+
+/**
+ * Ensure customer directory contains all contacts from project and material orders
+ */
+export async function syncCustomerDirectory(forceReset = false) {
+  if (forceReset) {
+    await clearStore('customers');
+  }
+  const existingCustomers = await getAll('customers');
+  const customerMap = new Map();
+  existingCustomers.forEach(c => customerMap.set(c.name?.toLowerCase(), c));
+
+  const newCustomers = [];
+
+  seedProjectOrders.forEach(order => {
+    const cleanName = cleanCustomerName(order.name);
+    if (cleanName && !customerMap.has(cleanName.toLowerCase())) {
+      const c = {
+        name: cleanName,
+        phone: order.phone || '',
+        email: '',
+        address: '',
+        notes: `Project: ${order.projectName}`,
+      };
+      customerMap.set(cleanName.toLowerCase(), c);
+      newCustomers.push(c);
+    }
+  });
+
+  seedMaterialOrders.forEach(order => {
+    const cleanName = cleanCustomerName(order.customerName);
+    if (cleanName && !customerMap.has(cleanName.toLowerCase())) {
+      const c = {
+        name: cleanName,
+        phone: order.contactNo || '',
+        email: '',
+        address: '',
+        notes: `Material: ${order.materialItem}`,
+      };
+      customerMap.set(cleanName.toLowerCase(), c);
+      newCustomers.push(c);
+    }
+  });
+
+  if (newCustomers.length > 0) {
+    await bulkAdd('customers', newCustomers);
+  }
+}
+
+/**
+ * 1-Click Complete Force Sync from Verified Seed Data
+ */
+export async function forceSyncPreloadedData() {
+  await resetProjectOrdersToSeed(seedProjectOrders);
+  await resetMaterialOrdersToSeed(seedMaterialOrders);
+  await syncCustomerDirectory();
+  localStorage.setItem('pm_verified_33_orders', 'true');
+  localStorage.setItem('pm_verified_40_materials', 'true');
+  await updateSidebarBadges();
+  showToast('Verified all 33 Projects & 40 Material Orders from spreadsheets!', 'success');
+}
+
+/**
+ * Update Sidebar Badges for total counts
+ */
+export async function updateSidebarBadges() {
+  try {
+    const pCount = await count('projectOrders');
+    const mCount = await count('materialOrders');
+    const bCount = await count('porterBatches');
+
+    const badgeP = document.getElementById('badge-projects');
+    const badgeM = document.getElementById('badge-materials');
+    const badgeB = document.getElementById('badge-batches');
+
+    if (badgeP) badgeP.textContent = pCount;
+    if (badgeM) badgeM.textContent = mCount;
+    if (badgeB) badgeB.textContent = bCount;
+  } catch (e) {
+    console.warn('Could not update badges', e);
+  }
+}
+
+/**
+ * Navigate to a Page
+ */
+export async function navigate(pageId) {
+  if (!routes[pageId]) pageId = 'dashboard';
+  currentPage = pageId;
+
+  // Close any open popups on navigation
+  document.getElementById('global-search-results')?.classList.add('hidden');
+  document.getElementById('notifications-dropdown')?.classList.add('hidden');
+
+  // Update URL hash without scroll
+  history.replaceState(null, '', `#${pageId}`);
+
+  // Update active sidebar state
+  document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => {
+    if (el.dataset.page === pageId) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+
+  // Render Page Content
+  const container = document.getElementById('page-container');
+  if (!container) return;
+
+  container.innerHTML = routes[pageId].render();
+
+  // Initialize Page Logic
+  try {
+    await routes[pageId].init();
+  } catch (err) {
+    console.error(`Error initializing page ${pageId}:`, err);
+  }
+
+  // Refresh badges in sidebar
+  updateSidebarBadges();
+}
+
+/**
+ * Setup Sidebar Navigation Clicks
+ */
+function setupNavigation() {
+  document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const page = item.dataset.page;
+      if (page) {
+        navigate(page);
+        // On mobile, close sidebar after navigation
+        if (window.innerWidth < 1024) {
+          document.getElementById('sidebar')?.classList.remove('open');
+        }
+      }
+    });
+  });
+
+  window.addEventListener('hashchange', () => {
+    const hash = window.location.hash.replace('#', '').trim();
+    if (routes[hash] && hash !== currentPage) {
+      navigate(hash);
+    }
+  });
+}
+
+/**
+ * Setup Quick Add Modal Button
+ */
+function setupQuickAdd() {
+  const quickAddBtn = document.getElementById('btn-quick-add');
+  if (!quickAddBtn) return;
+
+  quickAddBtn.addEventListener('click', () => {
+    openQuickAddMenu();
+  });
+}
+
+function openQuickAddMenu() {
+  const overlay = document.getElementById('modal-overlay');
+  const container = document.getElementById('modal-container');
+  if (!overlay || !container) return;
+
+  container.innerHTML = `
+    <div class="modal-header">
+      <h2>Quick Actions</h2>
+      <button class="modal-close" id="modal-close">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-secondary); margin-bottom: 20px;">Choose what you would like to create:</p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+        <button id="qa-project" class="quick-add-card" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:20px; background:var(--bg-tertiary); border:1px solid var(--border-primary); border-radius:var(--radius-md); text-align:left; cursor:pointer; transition:var(--transition-fast);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(124,58,237,0.15); color:var(--accent-purple); display:flex; align-items:center; justify-content:center;">
+            <span class="material-icons-round">inventory_2</span>
+          </div>
+          <strong style="color:var(--text-primary); font-size:1.05rem;">Project Order</strong>
+          <span style="color:var(--text-tertiary); font-size:0.85rem;">Track readymade project order, milestones & student details</span>
+        </button>
+
+        <button id="qa-material" class="quick-add-card" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:20px; background:var(--bg-tertiary); border:1px solid var(--border-primary); border-radius:var(--radius-md); text-align:left; cursor:pointer; transition:var(--transition-fast);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(16,185,129,0.15); color:var(--accent-green); display:flex; align-items:center; justify-content:center;">
+            <span class="material-icons-round">shopping_cart</span>
+          </div>
+          <strong style="color:var(--text-primary); font-size:1.05rem;">Material Order</strong>
+          <span style="color:var(--text-tertiary); font-size:0.85rem;">Log component procurement, wholesale cost & porter charges</span>
+        </button>
+
+        <button id="qa-batch" class="quick-add-card" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:20px; background:var(--bg-tertiary); border:1px solid var(--border-primary); border-radius:var(--radius-md); text-align:left; cursor:pointer; transition:var(--transition-fast);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(245,158,11,0.15); color:var(--accent-orange); display:flex; align-items:center; justify-content:center;">
+            <span class="material-icons-round">local_shipping</span>
+          </div>
+          <strong style="color:var(--text-primary); font-size:1.05rem;">Porter Delivery Batch</strong>
+          <span style="color:var(--text-tertiary); font-size:0.85rem;">Group wholesale delivery & auto-split charges equally</span>
+        </button>
+
+        <button id="qa-customer" class="quick-add-card" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:20px; background:var(--bg-tertiary); border:1px solid var(--border-primary); border-radius:var(--radius-md); text-align:left; cursor:pointer; transition:var(--transition-fast);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(59,130,246,0.15); color:var(--accent-blue); display:flex; align-items:center; justify-content:center;">
+            <span class="material-icons-round">person_add</span>
+          </div>
+          <strong style="color:var(--text-primary); font-size:1.05rem;">New Customer</strong>
+          <span style="color:var(--text-tertiary); font-size:0.85rem;">Add a new client contact with phone and requirements</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  overlay.classList.remove('hidden');
+
+  document.getElementById('modal-close').onclick = () => overlay.classList.add('hidden');
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.classList.add('hidden'); };
+
+  document.getElementById('qa-project').onclick = () => {
+    overlay.classList.add('hidden');
+    navigate('projects');
+    setTimeout(() => openProjectModal(), 100);
+  };
+
+  document.getElementById('qa-material').onclick = () => {
+    overlay.classList.add('hidden');
+    navigate('materials');
+    setTimeout(() => openMaterialModal(), 100);
+  };
+
+  document.getElementById('qa-batch').onclick = () => {
+    overlay.classList.add('hidden');
+    navigate('batches');
+    setTimeout(() => openBatchModal(), 100);
+  };
+
+  document.getElementById('qa-customer').onclick = () => {
+    overlay.classList.add('hidden');
+    navigate('customers');
+    setTimeout(() => openCustomerModal(), 100);
+  };
+}
+
+/**
+ * Setup Global Search across all entities with Mutual Closing
+ */
+function setupGlobalSearch() {
+  const searchInput = document.getElementById('global-search');
+  const clearBtn = document.getElementById('btn-clear-search');
+  const kbd = document.getElementById('search-kbd');
+  if (!searchInput) return;
+
+  let resultsContainer = document.getElementById('global-search-results');
+  if (!resultsContainer) {
+    resultsContainer = document.createElement('div');
+    resultsContainer.id = 'global-search-results';
+    resultsContainer.className = 'global-search-dropdown hidden';
+    searchInput.parentElement.appendChild(resultsContainer);
+  }
+
+  let debounceTimer;
+
+  function updateClearBtnVisibility() {
+    if (searchInput.value.trim()) {
+      clearBtn?.classList.remove('hidden');
+      kbd?.classList.add('hidden');
+    } else {
+      clearBtn?.classList.add('hidden');
+      kbd?.classList.remove('hidden');
+    }
+  }
+
+  clearBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    searchInput.value = '';
+    resultsContainer.classList.add('hidden');
+    updateClearBtnVisibility();
+    searchInput.focus();
+  });
+
+  searchInput.addEventListener('input', (e) => {
+    // Close notifications immediately when searching
+    document.getElementById('notifications-dropdown')?.classList.add('hidden');
+    updateClearBtnVisibility();
+
+    clearTimeout(debounceTimer);
+    const query = e.target.value.trim().toLowerCase();
+    if (!query) {
+      resultsContainer.classList.add('hidden');
+      return;
+    }
+
+    debounceTimer = setTimeout(async () => {
+      await performGlobalSearch(query, resultsContainer);
+    }, 200);
+  });
+
+  searchInput.addEventListener('focus', () => {
+    // Close notifications immediately
+    document.getElementById('notifications-dropdown')?.classList.add('hidden');
+
+    if (searchInput.value.trim()) {
+      resultsContainer.classList.remove('hidden');
+    }
+  });
+}
+
+async function performGlobalSearch(query, resultsContainer) {
+  const [projects, materials, customers] = await Promise.all([
+    getAll('projectOrders'),
+    getAll('materialOrders'),
+    getAll('customers'),
+  ]);
+
+  const matchedProjects = projects.filter(p =>
+    p.name?.toLowerCase().includes(query) ||
+    p.projectName?.toLowerCase().includes(query) ||
+    p.phone?.toLowerCase().includes(query)
+  ).slice(0, 5);
+
+  const matchedMaterials = materials.filter(m =>
+    m.customerName?.toLowerCase().includes(query) ||
+    m.materialItem?.toLowerCase().includes(query) ||
+    m.contactNo?.toLowerCase().includes(query)
+  ).slice(0, 5);
+
+  const matchedCustomers = customers.filter(c =>
+    c.name?.toLowerCase().includes(query) ||
+    c.phone?.toLowerCase().includes(query)
+  ).slice(0, 5);
+
+  const totalMatches = matchedProjects.length + matchedMaterials.length + matchedCustomers.length;
+
+  if (totalMatches === 0) {
+    resultsContainer.innerHTML = `
+      <div style="padding: 16px; text-align: center; color: var(--text-tertiary); font-size: 0.85rem;">
+        No results found for "${query}"
+      </div>
+    `;
+    resultsContainer.classList.remove('hidden');
+    return;
+  }
+
+  let html = '';
+
+  if (matchedProjects.length > 0) {
+    html += `<div class="search-section-title">Project Orders (${matchedProjects.length})</div>`;
+    matchedProjects.forEach(p => {
+      html += `
+        <div class="search-result-item" data-type="project" data-id="${p.id}">
+          <span class="material-icons-round" style="color:var(--accent-purple)">inventory_2</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; color:var(--text-primary);">${p.projectName}</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">${p.name} • ${formatCurrency(p.payment)} • ${p.status}</div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  if (matchedMaterials.length > 0) {
+    html += `<div class="search-section-title">Material Orders (${matchedMaterials.length})</div>`;
+    matchedMaterials.forEach(m => {
+      html += `
+        <div class="search-result-item" data-type="material" data-id="${m.id}">
+          <span class="material-icons-round" style="color:var(--accent-green)">shopping_cart</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; color:var(--text-primary);">${m.materialItem}</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">${m.customerName} • ${formatCurrency(m.totalPrice)} • ${m.orderStatus}</div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  if (matchedCustomers.length > 0) {
+    html += `<div class="search-section-title">Customers (${matchedCustomers.length})</div>`;
+    matchedCustomers.forEach(c => {
+      html += `
+        <div class="search-result-item" data-type="customer" data-id="${c.id}">
+          <span class="material-icons-round" style="color:var(--accent-blue)">person</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; color:var(--text-primary);">${c.name}</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">${c.phone || 'No phone'}</div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  resultsContainer.innerHTML = html;
+  resultsContainer.classList.remove('hidden');
+
+  resultsContainer.querySelectorAll('.search-result-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const type = item.dataset.type;
+      resultsContainer.classList.add('hidden');
+      document.getElementById('global-search').value = '';
+
+      if (type === 'project') navigate('projects');
+      else if (type === 'material') navigate('materials');
+      else if (type === 'customer') navigate('customers');
+    });
+  });
+}
+
+/**
+ * Setup Notifications & Pending Deadlines with Mutual Closing
+ */
+function setupNotifications() {
+  const notifBtn = document.getElementById('btn-notifications');
+  const notifDot = document.getElementById('notification-dot');
+  if (!notifBtn) return;
+
+  let notifDropdown = document.getElementById('notifications-dropdown');
+  if (!notifDropdown) {
+    notifDropdown = document.createElement('div');
+    notifDropdown.id = 'notifications-dropdown';
+    notifDropdown.className = 'notifications-dropdown hidden';
+    notifBtn.parentElement.appendChild(notifDropdown);
+  }
+
+  refreshNotifications(notifDot, notifDropdown);
+
+  notifBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    // Close search dropdown immediately
+    document.getElementById('global-search-results')?.classList.add('hidden');
+
+    const isHidden = notifDropdown.classList.contains('hidden');
+    if (isHidden) {
+      notifDropdown.classList.remove('hidden');
+      refreshNotifications(notifDot, notifDropdown);
+    } else {
+      notifDropdown.classList.add('hidden');
+    }
+  });
+
+  // Universal outside-click dismiss for notifications and search
+  document.addEventListener('click', (e) => {
+    const notif = document.getElementById('notifications-dropdown');
+    const btn = document.getElementById('btn-notifications');
+    const searchDropdown = document.getElementById('global-search-results');
+    const searchContainer = document.querySelector('.topbar-search');
+
+    if (notif && !notif.classList.contains('hidden')) {
+      if (!btn?.contains(e.target) && !notif.contains(e.target)) {
+        notif.classList.add('hidden');
+      }
+    }
+
+    if (searchDropdown && !searchDropdown.classList.contains('hidden')) {
+      if (!searchContainer?.contains(e.target)) {
+        searchDropdown.classList.add('hidden');
+      }
+    }
+  });
+}
+
+async function refreshNotifications(dot, dropdown) {
+  try {
+    const [projects, materials] = await Promise.all([
+      getAll('projectOrders'),
+      getAll('materialOrders'),
+    ]);
+
+    const waitingForMaterial = projects.filter(p => p.status === 'waiting');
+    const pendingPayment = projects.filter(p => parseFloat(p.pending) > 0);
+    const inAssembly = projects.filter(p => p.status === 'in-assembly');
+
+    const totalNotifications = waitingForMaterial.length + (pendingPayment.length > 0 ? 1 : 0);
+
+    if (dot) {
+      dot.style.display = totalNotifications > 0 ? 'block' : 'none';
+    }
+
+    let itemsHtml = `
+      <div class="notifications-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <h3>Notifications & Alerts</h3>
+          <span class="badge" style="background:var(--accent-purple); color:white; font-size:0.75rem; padding:2px 8px; border-radius:12px;">${totalNotifications} alerts</span>
+        </div>
+        <button id="btn-close-notif-panel" title="Close Panel" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; padding:4px; display:flex; align-items:center; border-radius:var(--radius-sm);">
+          <span class="material-icons-round" style="font-size:20px;">close</span>
+        </button>
+      </div>
+      <div class="notifications-list">
+    `;
+
+    if (waitingForMaterial.length > 0) {
+      itemsHtml += `
+        <div class="notification-item warning" id="notif-waiting-materials" style="cursor:pointer">
+          <span class="material-icons-round" style="color:var(--accent-orange)">pending_actions</span>
+          <div>
+            <div style="font-weight:600; font-size:0.85rem;">${waitingForMaterial.length} Orders Waiting for Materials</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">Needs procurement from Rajindra Electronics</div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (pendingPayment.length > 0) {
+      const totalPendingSum = pendingPayment.reduce((sum, p) => sum + (parseFloat(p.pending) || 0), 0);
+      itemsHtml += `
+        <div class="notification-item info" id="notif-pending-payments" style="cursor:pointer">
+          <span class="material-icons-round" style="color:var(--accent-blue)">account_balance_wallet</span>
+          <div>
+            <div style="font-weight:600; font-size:0.85rem;">Pending Payments: ${formatCurrency(totalPendingSum)}</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">${pendingPayment.length} clients have balance remaining</div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (inAssembly.length > 0) {
+      itemsHtml += `
+        <div class="notification-item success" id="notif-in-assembly" style="cursor:pointer">
+          <span class="material-icons-round" style="color:var(--accent-green)">build</span>
+          <div>
+            <div style="font-weight:600; font-size:0.85rem;">${inAssembly.length} Orders in Assembly</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">Currently being built and tested</div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (totalNotifications === 0 && inAssembly.length === 0) {
+      itemsHtml += `
+        <div style="padding: 24px; text-align: center; color: var(--text-tertiary); font-size: 0.85rem;">
+          <span class="material-icons-round" style="font-size: 32px; display:block; margin-bottom: 8px; opacity:0.5;">check_circle</span>
+          All caught up! No urgent alerts.
+        </div>
+      `;
+    }
+
+    itemsHtml += `</div>`;
+    dropdown.innerHTML = itemsHtml;
+
+    document.getElementById('btn-close-notif-panel')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.add('hidden');
+    });
+
+    document.getElementById('notif-waiting-materials')?.addEventListener('click', () => {
+      dropdown.classList.add('hidden');
+      navigate('projects');
+    });
+
+    document.getElementById('notif-pending-payments')?.addEventListener('click', () => {
+      dropdown.classList.add('hidden');
+      navigate('projects');
+    });
+
+    document.getElementById('notif-in-assembly')?.addEventListener('click', () => {
+      dropdown.classList.add('hidden');
+      navigate('projects');
+    });
+
+  } catch (err) {
+    console.warn('Error refreshing notifications:', err);
+  }
+}
+
+/**
+ * Setup Sidebar Mobile Toggle
+ */
+function setupSidebarToggle() {
+  const toggleBtn = document.getElementById('sidebar-toggle');
+  const sidebar = document.getElementById('sidebar');
+
+  if (toggleBtn && sidebar) {
+    toggleBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+    });
+  }
+}
+
+/**
+ * Setup Global Keyboard Shortcuts
+ */
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      const search = document.getElementById('global-search');
+      if (search) {
+        search.focus();
+        search.select();
+      }
+    }
+
+    if (e.key === 'Escape') {
+      const search = document.getElementById('global-search');
+      if (search) search.blur();
+
+      const overlay = document.getElementById('modal-overlay');
+      if (overlay && !overlay.classList.contains('hidden')) {
+        overlay.classList.add('hidden');
+      }
+
+      const searchDropdown = document.getElementById('global-search-results');
+      if (searchDropdown) searchDropdown.classList.add('hidden');
+
+      const notifDropdown = document.getElementById('notifications-dropdown');
+      if (notifDropdown) notifDropdown.classList.add('hidden');
+    }
+  });
+}

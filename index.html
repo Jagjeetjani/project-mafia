@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Project Mafia - Business Management Software for Ready-Made Projects & Components" />
+  <title>Project Mafia — Business Manager</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#7e14ff" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles/main.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon">
+            <span class="material-icons-round">rocket_launch</span>
+          </div>
+          <div class="logo-text">
+            <h1>Project Mafia</h1>
+            <span class="logo-subtitle">Business Manager</span>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <span class="nav-section-title">Overview</span>
+          <a href="#" class="nav-item active" data-page="dashboard">
+            <span class="material-icons-round">dashboard</span>
+            <span>Dashboard</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-section-title">Management</span>
+          <a href="#" class="nav-item" data-page="projects">
+            <span class="material-icons-round">inventory_2</span>
+            <span>Project Orders</span>
+            <span class="nav-badge" id="badge-projects">0</span>
+          </a>
+          <a href="#" class="nav-item" data-page="materials">
+            <span class="material-icons-round">shopping_cart</span>
+            <span>Material Orders</span>
+            <span class="nav-badge" id="badge-materials">0</span>
+          </a>
+          <a href="#" class="nav-item" data-page="batches">
+            <span class="material-icons-round">local_shipping</span>
+            <span>Porter Batches</span>
+            <span class="nav-badge" id="badge-batches">0</span>
+          </a>
+          <a href="#" class="nav-item" data-page="customers">
+            <span class="material-icons-round">people</span>
+            <span>Customers</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-section-title">Finance</span>
+          <a href="#" class="nav-item" data-page="invoices">
+            <span class="material-icons-round">receipt_long</span>
+            <span>Invoices</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-section-title">Tools</span>
+          <a href="#" class="nav-item" data-page="import">
+            <span class="material-icons-round">upload_file</span>
+            <span>Import / Export</span>
+          </a>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="storage-info">
+          <span class="material-icons-round">storage</span>
+          <span id="storage-status">Local Storage</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main id="main-content" class="main-content">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <button id="sidebar-toggle" class="sidebar-toggle">
+          <span class="material-icons-round">menu</span>
+        </button>
+        <div class="topbar-search">
+          <span class="material-icons-round">search</span>
+          <input type="text" id="global-search" placeholder="Search orders, customers, projects..." autocomplete="off" />
+          <kbd id="search-kbd">Ctrl+K</kbd>
+          <button id="btn-clear-search" class="btn-clear-search hidden" type="button" title="Clear Search">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn-icon" id="btn-notifications" title="Notifications">
+            <span class="material-icons-round">notifications</span>
+            <span class="notification-dot" id="notification-dot"></span>
+          </button>
+          <button class="btn-primary" id="btn-quick-add">
+            <span class="material-icons-round">add</span>
+            <span>Quick Add</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Page Container -->
+      <div id="page-container" class="page-container">
+        <!-- Pages will be rendered here -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal Overlay -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div id="modal-container" class="modal-container">
+      <!-- Modal content injected dynamically -->
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
