@@ -23,10 +23,6 @@ export function renderMaterialOrders() {
         <p class="page-subtitle">Track material procurement, wholesale orders, and component sales</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn-secondary" id="btn-sync-materials-data" title="Sync with Verified 40 Spreadsheet Orders">
-          <span class="material-icons-round">sync</span>
-          <span>Sync 40 Orders</span>
-        </button>
         <button class="btn-primary" id="btn-add-material">
           <span class="material-icons-round">add</span>
           <span>New Material Order</span>
@@ -301,23 +297,6 @@ function bindMaterialEvents() {
   // Add button
   document.getElementById('btn-add-material')?.addEventListener('click', () => {
     openMaterialModal();
-  });
-
-  // Sync 40 Orders button
-  document.getElementById('btn-sync-materials-data')?.addEventListener('click', async () => {
-    const confirmed = await showConfirm(
-      'Sync 40 Orders from Sheet',
-      'This will reload all 40 verified material orders and procurement items from the official spreadsheet tracker. Continue?'
-    );
-    if (confirmed) {
-      await resetMaterialOrdersToSeed(seedMaterialOrders);
-      localStorage.setItem('pm_verified_40_materials', 'true');
-      showToast('All 40 material orders synchronized successfully!', 'success');
-      currentPage = 1;
-      await loadMaterialOrders();
-      renderMaterialStats();
-      updateBadges();
-    }
   });
 
   // Delegate edit/delete
