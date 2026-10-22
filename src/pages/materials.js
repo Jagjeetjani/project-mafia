@@ -33,6 +33,10 @@ export function renderMaterialOrders() {
           <span class="material-icons-round">inventory_2</span>
           <span>Wholesaler Order List</span>
         </button>
+        <button class="btn-secondary" id="btn-material-from-invoice" title="Create a Component Order by importing items list from an existing Invoice">
+          <span class="material-icons-round" style="color:var(--accent-primary-light);">receipt_long</span>
+          <span>Add from Invoice</span>
+        </button>
         <button class="btn-primary" id="btn-add-material">
           <span class="material-icons-round">add</span>
           <span>New Material Order</span>
@@ -238,7 +242,19 @@ function renderMaterialTable() {
         </td>
         <td><span class="status-badge ${order.orderType === 'Component Order' ? 'completed' : 'pending'}" style="font-size:0.7rem">${order.orderType || '—'}</span></td>
         <td class="cell-secondary">${formatDate(order.orderDate)}</td>
-        <td>${order.materialItem || '—'}</td>
+        <td>
+          ${(() => {
+            const raw = order.materialItem || '—';
+            const lines = raw.split(/[\r\n]+/).filter(l => l.trim());
+            if (lines.length <= 1) return `<div>${raw}</div>`;
+            return `
+              <div title="${raw.replace(/"/g, '&quot;')}">
+                ${lines.slice(0, 3).map(l => `<div style="font-size:0.78rem; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">${l}</div>`).join('')}
+                ${lines.length > 3 ? `<div style="font-size:0.68rem; color:var(--accent-primary-light); font-weight:600; margin-top:2px;">+ ${lines.length - 3} more items</div>` : ''}
+              </div>
+            `;
+          })()}
+        </td>
         <td>${order.qty || '—'}</td>
         <td class="cell-money">${formatCurrency(order.unitPrice)}</td>
         <td class="cell-money">${formatCurrency(order.totalPrice)}</td>
@@ -338,6 +354,11 @@ function bindMaterialEvents() {
   // Add button
   document.getElementById('btn-add-material')?.addEventListener('click', () => {
     openMaterialModal();
+  });
+
+  // Add from Invoice button
+  document.getElementById('btn-material-from-invoice')?.addEventListener('click', () => {
+    openMaterialModal(null, true);
   });
 
   // Delegate edit/delete and invoice action
@@ -720,7 +741,7 @@ export async function openConsolidatedProcurementModal() {
   renderView();
 }
 
-export async function openMaterialModal(order = null) {
+export async function openMaterialModal(order = null, openWithInvoiceImport = false) {
   const isEdit = !!order;
   const overlay = document.getElementById('modal-overlay');
   const container = document.getElementById('modal-container');
@@ -740,32 +761,43 @@ export async function openMaterialModal(order = null) {
       </button>
     </div>
     <div class="modal-body">
-      ${order ? `
-        <div style="background:linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.08) 100%); padding:12px 16px; border-radius:var(--radius-sm); border:1px solid rgba(99,102,241,0.25); margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <strong style="font-size:0.85rem; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
-                <span class="material-icons-round" style="font-size:18px; color:var(--accent-primary-light);">receipt_long</span>
-                Tax Invoice Mapping:
-              </strong>
-              <span style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px; display:block;">
-                ${mappedInvoice ? `Mapped to Tax Invoice <strong>${mappedInvoice.metadata?.invoice_no}</strong> (${formatDate(mappedInvoice.metadata?.invoice_date)})` : 'No Tax Invoice mapped yet.'}
-              </span>
-            </div>
-            <div>
-              ${mappedInvoice ? `
-                <button type="button" class="btn-xs btn-secondary btn-modal-view-invoice" data-invoice-id="${mappedInvoice.id}">
-                  <span class="material-icons-round" style="font-size:14px;">visibility</span> View Invoice
-                </button>
-              ` : `
-                <button type="button" class="btn-xs btn-primary btn-modal-create-invoice" data-order-id="${order.id}">
-                  <span class="material-icons-round" style="font-size:14px;">post_add</span> Generate Invoice
-                </button>
-              `}
-            </div>
-          </div>
+      <!-- INVOICE IMPORT / MAPPING SECTION -->
+      <div style="background:linear-gradient(135deg, rgba(99,102,241,0.07) 0%, rgba(139,92,246,0.07) 100%); padding:12px 16px; border-radius:var(--radius-sm); border:1px solid rgba(99,102,241,0.25); margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong style="font-size:0.85rem; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+            <span class="material-icons-round" style="font-size:18px; color:var(--accent-primary-light);">playlist_add</span>
+            Add / Import Items List from Invoice:
+          </strong>
+          <span id="mat-invoice-import-status" class="status-badge ${mappedInvoice ? 'completed' : 'pending'}" style="font-size:0.7rem;">
+            ${mappedInvoice ? `✓ Linked to ${mappedInvoice.metadata?.invoice_no || 'Invoice'}` : '1-Click Auto-Fill'}
+          </span>
         </div>
-      ` : ''}
+        <div style="display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center;">
+          <select class="form-select" id="mat-import-invoice-select" style="font-size:0.85rem;">
+            <option value="">— Select an Invoice to auto-fill component list & pricing —</option>
+            ${allInvoices.map(inv => {
+              const invNo = inv.metadata?.invoice_no || inv.invoiceNumber || 'INV';
+              const custName = inv.metadata?.customer_name || inv.customerName || 'Customer';
+              const itemCount = inv.items?.length || 0;
+              const total = inv.customer?.grand_total || inv.total || 0;
+              const isSelected = mappedInvoice && mappedInvoice.id === inv.id;
+              return `<option value="${inv.id}" ${isSelected ? 'selected' : ''}>${invNo} • ${custName} (${itemCount} items, ${formatCurrency(total)})</option>`;
+            }).join('')}
+          </select>
+          <button type="button" class="btn-secondary btn-sm" id="btn-apply-invoice-import" style="padding:6px 14px; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+            <span class="material-icons-round" style="font-size:16px;">download</span>
+            <span>Import List</span>
+          </button>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.73rem; color:var(--text-tertiary); margin-top:6px;">
+          <span>Loads invoice components, customer name, contact, total price, and wholesale costs.</span>
+          ${mappedInvoice ? `
+            <button type="button" class="btn-xs btn-secondary btn-modal-view-invoice" data-invoice-id="${mappedInvoice.id}" style="padding:2px 8px; font-size:0.72rem;">
+              <span class="material-icons-round" style="font-size:12px;">visibility</span> View Tax Invoice
+            </button>
+          ` : ''}
+        </div>
+      </div>
 
       <form id="material-form" class="form-grid">
         <div class="form-group">
@@ -775,7 +807,7 @@ export async function openMaterialModal(order = null) {
         <div class="form-group">
           <label class="form-label">Order Type</label>
           <select class="form-select" name="orderType">
-            <option value="Component Order" ${order?.orderType === 'Component Order' ? 'selected' : ''}>Component Order</option>
+            <option value="Component Order" ${order?.orderType === 'Component Order' || !order ? 'selected' : ''}>Component Order</option>
             <option value="Project Order" ${order?.orderType === 'Project Order' ? 'selected' : ''}>Project Order</option>
             <option value="Original Order" ${order?.orderType === 'Original Order' ? 'selected' : ''}>Original Order</option>
           </select>
@@ -785,9 +817,17 @@ export async function openMaterialModal(order = null) {
           <input class="form-input" type="date" name="orderDate" value="${formatDateForInput(order?.orderDate) || new Date().toISOString().split('T')[0]}" />
         </div>
         <div class="form-group full-width" style="position:relative;">
-          <label class="form-label">Material / Item * (Search Catalog)</label>
-          <input class="form-input" type="text" name="materialItem" id="material-item-input" value="${order?.materialItem || ''}" required placeholder="Type component name (518 catalog items autocomplete)..." autocomplete="off" />
-          <div id="material-catalog-dropdown" class="bom-catalog-dropdown hidden"></div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label class="form-label" style="margin:0;">Component Items List *</label>
+            <span style="font-size:0.73rem; color:var(--text-tertiary);">One component per line with quantity: e.g. "• Arduino Uno (2)"</span>
+          </div>
+          <textarea class="form-textarea" name="materialItem" id="material-item-input" rows="4" required placeholder="• Component Name (1)&#10;• Component Name (2)&#10;(or import from invoice above / search catalog below)" style="font-family:monospace; font-size:0.85rem; line-height:1.5;">${order?.materialItem || ''}</textarea>
+          
+          <div style="margin-top:6px; display:flex; gap:8px; align-items:center; position:relative;">
+            <span class="material-icons-round" style="font-size:16px; color:var(--accent-primary-light);">search</span>
+            <input type="text" id="catalog-quick-search-input" class="form-input" placeholder="Type to search 518 catalog components to append to list..." style="font-size:0.8rem; padding:4px 8px;" autocomplete="off" />
+            <div id="material-catalog-dropdown" class="bom-catalog-dropdown hidden" style="top:100%; left:0; width:100%; z-index:100;"></div>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Quantity</label>
@@ -876,10 +916,79 @@ export async function openMaterialModal(order = null) {
   qtyInput.addEventListener('input', calcTotal);
   unitPriceInput.addEventListener('input', calcTotal);
 
-  // Catalog live search autocomplete
-  if (itemInput && catalogDropdown) {
-    itemInput.addEventListener('input', async () => {
-      const q = itemInput.value.trim();
+  let selectedInvoiceId = mappedInvoice ? mappedInvoice.id : null;
+  let selectedInvoiceNo = mappedInvoice ? (mappedInvoice.metadata?.invoice_no || mappedInvoice.invoiceNumber) : null;
+
+  // Invoice import function
+  const applyInvoiceToForm = (inv) => {
+    if (!inv) return;
+    selectedInvoiceId = inv.id;
+    selectedInvoiceNo = inv.metadata?.invoice_no || inv.invoiceNumber;
+
+    const items = inv.items || [];
+    const formatted = items.map(item => `• ${item.description || item.name || 'Component'} (${item.quantity || 1})`).join('\n');
+    const totalQty = items.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
+    const grandTotal = parseFloat(inv.customer?.grand_total || inv.total || 0);
+    const wholesaleCost = parseFloat(inv.internal?.total_wholesale_cost || 0);
+    const isPaid = (inv.metadata?.payment_status || inv.paymentStatus || '').toLowerCase() === 'paid';
+
+    form.querySelector('[name="customerName"]').value = inv.metadata?.customer_name || inv.customerName || '';
+    form.querySelector('[name="orderType"]').value = 'Component Order';
+    if (inv.metadata?.invoice_date) {
+      form.querySelector('[name="orderDate"]').value = formatDateForInput(inv.metadata.invoice_date);
+    }
+    form.querySelector('[name="materialItem"]').value = formatted || inv.materialItem || '';
+    form.querySelector('[name="qty"]').value = totalQty || 1;
+    form.querySelector('[name="unitPrice"]').value = totalQty > 0 ? (grandTotal / totalQty).toFixed(2) : grandTotal;
+    form.querySelector('[name="totalPrice"]').value = grandTotal.toFixed(2);
+    form.querySelector('[name="wholesaleTotal"]').value = wholesaleCost.toFixed(2);
+    if (isPaid) {
+      form.querySelector('[name="received"]').value = grandTotal.toFixed(2);
+    }
+    if (inv.metadata?.phone && inv.metadata.phone !== 'N/A') {
+      form.querySelector('[name="contactNo"]').value = inv.metadata.phone;
+    }
+
+    const statusBadge = document.getElementById('mat-invoice-import-status');
+    if (statusBadge) {
+      statusBadge.className = 'status-badge completed';
+      statusBadge.textContent = `✓ Imported ${items.length} items from ${selectedInvoiceNo}`;
+    }
+
+    showToast(`✓ Imported ${items.length} items from Invoice ${selectedInvoiceNo}!`, 'success');
+  };
+
+  document.getElementById('btn-apply-invoice-import')?.addEventListener('click', () => {
+    const invSelect = document.getElementById('mat-import-invoice-select');
+    const invId = parseInt(invSelect?.value, 10);
+    if (!invId) {
+      showToast('Please select an invoice from the dropdown', 'warning');
+      return;
+    }
+    const inv = allInvoices.find(i => i.id === invId);
+    applyInvoiceToForm(inv);
+  });
+
+  document.getElementById('mat-import-invoice-select')?.addEventListener('change', (e) => {
+    const invId = parseInt(e.target.value, 10);
+    if (invId) {
+      const inv = allInvoices.find(i => i.id === invId);
+      applyInvoiceToForm(inv);
+    }
+  });
+
+  if (openWithInvoiceImport) {
+    const invSelect = document.getElementById('mat-import-invoice-select');
+    if (invSelect && allInvoices.length > 0) {
+      invSelect.focus();
+    }
+  }
+
+  // Catalog live search autocomplete to append to items list
+  const catalogSearchInput = document.getElementById('catalog-quick-search-input');
+  if (catalogSearchInput && catalogDropdown) {
+    catalogSearchInput.addEventListener('input', async () => {
+      const q = catalogSearchInput.value.trim();
       if (q.length < 2) {
         catalogDropdown.classList.add('hidden');
         return;
@@ -910,9 +1019,18 @@ export async function openMaterialModal(order = null) {
       const row = e.target.closest('.bom-catalog-item');
       if (!row) return;
       const name = row.dataset.name;
+      const cost = parseFloat(row.dataset.cost) || 0;
       if (name) {
-        itemInput.value = name;
+        const curText = itemInput.value.trim();
+        const lineToAdd = `• ${name} (1)`;
+        itemInput.value = curText ? `${curText}\n${lineToAdd}` : lineToAdd;
+        catalogSearchInput.value = '';
         catalogDropdown.classList.add('hidden');
+
+        // Increment wholesale cost
+        const curWholesale = parseFloat(form.querySelector('[name="wholesaleTotal"]').value) || 0;
+        form.querySelector('[name="wholesaleTotal"]').value = (curWholesale + cost).toFixed(2);
+        showToast(`Appended "${name}" to component list`, 'info');
       }
     });
 
@@ -932,13 +1050,6 @@ export async function openMaterialModal(order = null) {
       await navigate('invoices');
       showInvoicePreview(inv);
     }
-  });
-
-  document.querySelector('.btn-modal-create-invoice')?.addEventListener('click', async (e) => {
-    const orderId = parseInt(e.currentTarget.dataset.orderId, 10);
-    overlay.classList.add('hidden');
-    await navigate('invoices');
-    openInvoiceStudioModal(null, { type: 'material', id: orderId });
   });
 
   // Close handlers
@@ -972,18 +1083,32 @@ export async function openMaterialModal(order = null) {
     data.netProfit = received - wholesaleTotal - porterCharge;
 
     try {
+      let savedOrderId = order?.id;
       if (isEdit) {
         data.id = order.id;
         data.createdAt = order.createdAt;
         data.batchId = order.batchId || '';
         data.linkedProjectId = order.linkedProjectId || null;
-        data.invoiceId = order.invoiceId || null;
-        data.invoiceNo = order.invoiceNo || null;
+        data.invoiceId = selectedInvoiceId || order.invoiceId || null;
+        data.invoiceNo = selectedInvoiceNo || order.invoiceNo || null;
         await update('materialOrders', data);
         showToast('Material order updated');
       } else {
-        await add('materialOrders', data);
+        data.invoiceId = selectedInvoiceId || null;
+        data.invoiceNo = selectedInvoiceNo || null;
+        savedOrderId = await add('materialOrders', data);
         showToast('Material order added');
+      }
+
+      // If linked to an invoice, ensure invoice points back to this component order
+      if (selectedInvoiceId && savedOrderId) {
+        const targetInv = allInvoices.find(i => i.id === selectedInvoiceId);
+        if (targetInv) {
+          targetInv.mappedComponentOrderId = savedOrderId;
+          if (!targetInv.metadata) targetInv.metadata = {};
+          targetInv.metadata.component_order_id = savedOrderId;
+          await update('invoices', targetInv);
+        }
       }
 
       overlay.classList.add('hidden');

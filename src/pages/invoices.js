@@ -140,6 +140,10 @@ export function renderInvoices() {
           </div>
         </div>
         <div class="page-header-actions" style="display:flex; gap:8px;">
+          <button class="btn-secondary" id="btn-export-to-component-order" title="Add items list from this invoice to Component Order">
+            <span class="material-icons-round" style="color:var(--accent-primary-light);">playlist_add</span>
+            <span id="btn-export-to-component-order-text">Add List to Component Order</span>
+          </button>
           <button class="btn-secondary" id="btn-copy-preview-whatsapp">
             <span class="material-icons-round" style="color:#25D366;">chat</span>
             <span>Copy WhatsApp</span>
@@ -259,6 +263,9 @@ function renderInvoiceTable() {
         <td><span class="status-badge ${statusClass}">${meta.payment_status}</span></td>
         <td>
           <div class="row-actions">
+            <button title="${(inv.mappedComponentOrderId || meta.component_order_id) ? 'Sync list to Component Order #' + (inv.mappedComponentOrderId || meta.component_order_id) : 'Add list to Component Order'}" class="btn-invoice-to-order" data-id="${inv.id}">
+              <span class="material-icons-round" style="color:var(--accent-primary-light);">playlist_add</span>
+            </button>
             <button title="View / Print Tax Invoice" class="view-invoice" data-id="${inv.id}">
               <span class="material-icons-round">visibility</span>
             </button>
@@ -304,6 +311,16 @@ function bindInvoiceEvents() {
     const viewBtn = e.target.closest('.view-invoice');
     const editBtn = e.target.closest('.edit-invoice');
     const deleteBtn = e.target.closest('.delete-invoice');
+    const toOrderBtn = e.target.closest('.btn-invoice-to-order');
+
+    if (toOrderBtn) {
+      const id = parseInt(toOrderBtn.dataset.id, 10);
+      const invoice = invoices.find(i => i.id === id);
+      if (invoice) {
+        await createComponentOrderFromInvoice(invoice);
+      }
+      return;
+    }
 
     const matBadge = e.target.closest('.badge-jump-material');
     if (matBadge) {
@@ -370,6 +387,12 @@ function bindInvoiceEvents() {
     window.print();
   });
 
+  // Export/Sync preview invoice items list to Component Order
+  document.getElementById('btn-export-to-component-order')?.addEventListener('click', async () => {
+    if (!currentViewingInvoice) return;
+    await createComponentOrderFromInvoice(currentViewingInvoice);
+  });
+
   // WhatsApp button in preview
   document.getElementById('btn-copy-preview-whatsapp')?.addEventListener('click', async () => {
     if (!currentViewingInvoice) return;
@@ -384,6 +407,107 @@ function bindInvoiceEvents() {
 }
 
 /**
+ * 1-Click: Create or Update Component Order from Invoice items list
+ */
+export async function createComponentOrderFromInvoice(invoice) {
+  if (!invoice) return null;
+  const items = invoice.items || [];
+  if (items.length === 0) {
+    showToast('This invoice has no items to export to a Component Order.', 'warning');
+    return null;
+  }
+
+  const formattedItems = items.map(item => {
+    const qty = item.quantity || 1;
+    const name = item.description || item.name || 'Component';
+    return `• ${name} (${qty})`;
+  }).join('\n');
+
+  const totalQty = items.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
+  const custTotal = parseFloat(invoice.customer?.grand_total || invoice.total || 0);
+  const wholesaleTotal = parseFloat(invoice.internal?.total_wholesale_cost || 0);
+  const netProfit = parseFloat(invoice.internal?.final_net_profit || 0);
+  const paymentStatus = (invoice.metadata?.payment_status || invoice.paymentStatus || '').toLowerCase();
+  const isPaid = paymentStatus === 'paid';
+  const received = isPaid ? custTotal : 0;
+  const balance = custTotal - received;
+
+  const mappedOrderId = invoice.mappedComponentOrderId || invoice.metadata?.component_order_id;
+
+  if (mappedOrderId) {
+    const materialOrders = await getAll('materialOrders');
+    const existingOrder = materialOrders.find(m => m.id === mappedOrderId);
+    if (existingOrder) {
+      const confirmed = await showConfirm(
+        'Update Linked Component Order',
+        `Invoice ${invoice.metadata?.invoice_no || ''} is linked to Component Order #${mappedOrderId}.\n\nDo you want to sync Component Order #${mappedOrderId} with these ${items.length} items (${totalQty} units, ₹${custTotal})?`
+      );
+      if (!confirmed) return mappedOrderId;
+
+      const updatedOrder = {
+        ...existingOrder,
+        materialItem: formattedItems,
+        qty: totalQty,
+        unitPrice: totalQty > 0 ? parseFloat((custTotal / totalQty).toFixed(2)) : custTotal,
+        totalPrice: custTotal,
+        received: existingOrder.received > 0 ? existingOrder.received : received,
+        balance: custTotal - (existingOrder.received > 0 ? existingOrder.received : received),
+        wholesaleTotal: wholesaleTotal,
+        netProfit: netProfit,
+        customerName: invoice.metadata?.customer_name || existingOrder.customerName,
+        contactNo: invoice.metadata?.phone || existingOrder.contactNo,
+        invoiceId: invoice.id,
+        invoiceNo: invoice.metadata?.invoice_no
+      };
+
+      await update('materialOrders', updatedOrder);
+      showToast(`✓ Synced ${items.length} items to Component Order #${mappedOrderId}!`, 'success');
+      await loadInvoices();
+      return mappedOrderId;
+    }
+  }
+
+  // Create brand new Component Order in materialOrders
+  const newOrder = {
+    customerName: invoice.metadata?.customer_name || invoice.customerName || 'Customer',
+    orderType: 'Component Order',
+    orderDate: invoice.metadata?.invoice_date || new Date().toISOString().split('T')[0],
+    materialItem: formattedItems,
+    qty: totalQty || 1,
+    unitPrice: totalQty > 0 ? parseFloat((custTotal / totalQty).toFixed(2)) : custTotal,
+    totalPrice: custTotal,
+    received: received,
+    balance: balance,
+    wholesaleTotal: wholesaleTotal,
+    wholesaler: 'Rajindra Electronics',
+    porterCharge: 0,
+    netProfit: netProfit,
+    orderStatus: 'pending',
+    wholesaleStatus: 'pending',
+    contactNo: invoice.metadata?.phone || '',
+    notes: `From Tax Invoice ${invoice.metadata?.invoice_no || ''}`,
+    invoiceId: invoice.id,
+    invoiceNo: invoice.metadata?.invoice_no || ''
+  };
+
+  const newOrderId = await add('materialOrders', newOrder);
+  invoice.mappedComponentOrderId = newOrderId;
+  if (!invoice.metadata) invoice.metadata = {};
+  invoice.metadata.component_order_id = newOrderId;
+  await update('invoices', invoice);
+
+  showToast(`✓ Created Component Order #${newOrderId} from invoice with ${items.length} items!`, 'success');
+  await loadInvoices();
+
+  const exportBtnText = document.getElementById('btn-export-to-component-order-text');
+  if (exportBtnText) {
+    exportBtnText.textContent = `Sync to Component Order #${newOrderId}`;
+  }
+
+  return newOrderId;
+}
+
+/**
  * Open the Comprehensive Invoice Studio Modal (Matching C:\INVOICE)
  */
 export async function openInvoiceStudioModal(existingInvoice = null, preselectedOrder = null) {
@@ -394,7 +518,7 @@ export async function openInvoiceStudioModal(existingInvoice = null, preselected
   const isEdit = !!existingInvoice;
 
   // Load project orders and catalog
-  const [projectOrders, materialOrders, catalog] = await Promise.all([
+  let [projectOrders, materialOrders, catalog] = await Promise.all([
     getAll('projectOrders'),
     getAll('materialOrders'),
     getCatalog()
@@ -505,6 +629,19 @@ export async function openInvoiceStudioModal(existingInvoice = null, preselected
               <option value="${p.id}">${p.name} — ${p.projectName} (${formatCurrency(p.payment)})</option>
             `).join('')}
           </select>
+        </div>
+
+        <!-- 1-Click push invoice list to component order -->
+        <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(99,102,241,0.18); display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px;">
+          <button type="button" class="btn-secondary btn-sm" id="btn-modal-push-to-order" style="display:inline-flex; align-items:center; gap:5px; padding:6px 12px; font-size:0.8rem; border-color:rgba(99,102,241,0.3); color:var(--accent-primary-light);" title="Immediately create or update a Component Order from this invoice list">
+            <span class="material-icons-round" style="font-size:16px;">playlist_add</span>
+            <span id="btn-modal-push-to-order-text">${currentMappedComponentOrderId ? 'Sync List to Order #' + currentMappedComponentOrderId : 'Push List to Component Order'}</span>
+          </button>
+
+          <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer; color:var(--text-secondary);">
+            <input type="checkbox" id="chk-sync-to-component-order" ${currentMappedComponentOrderId ? 'checked' : ''} />
+            <span>Sync invoice list to Component Orders on save</span>
+          </label>
         </div>
       </div>
 
@@ -895,7 +1032,96 @@ export async function openInvoiceStudioModal(existingInvoice = null, preselected
       mapBadge.className = 'status-badge pending';
       mapBadge.textContent = 'No Component Order Linked';
     }
+    const pushBtnText = document.getElementById('btn-modal-push-to-order-text');
+    if (pushBtnText) pushBtnText.textContent = 'Push List to Component Order';
     showToast('Unlinked from Component Order', 'info');
+  });
+
+  // Modal 1-click Push List to Component Order
+  document.getElementById('btn-modal-push-to-order')?.addEventListener('click', async () => {
+    if (currentItems.length === 0) {
+      showToast('Please add items to this invoice first', 'warning');
+      return;
+    }
+    recalculateAndRender();
+
+    const formattedItems = currentItems.map(item => {
+      const qty = item.quantity || 1;
+      const name = item.name || 'Component';
+      return `• ${name} (${qty})`;
+    }).join('\n');
+    const totalQty = currentItems.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
+    const custTotal = parseFloat(calculatedData?.customer?.grand_total || 0);
+    const wholesaleTotal = parseFloat(calculatedData?.internal?.total_wholesale_cost || 0);
+    const netProfit = parseFloat(calculatedData?.internal?.final_net_profit || 0);
+    const custName = document.getElementById('inv-customer-name')?.value.trim() || 'Customer';
+    const phone = document.getElementById('inv-phone')?.value.trim() || '';
+    const dateVal = document.getElementById('inv-date')?.value || new Date().toISOString().split('T')[0];
+    const invNo = document.getElementById('inv-invoice-no')?.value.trim() || 'INV';
+    const isPaid = (document.getElementById('inv-payment-status')?.value || '').toLowerCase() === 'paid';
+
+    if (currentMappedComponentOrderId) {
+      const existingOrder = materialOrders.find(m => m.id === currentMappedComponentOrderId);
+      if (existingOrder) {
+        await update('materialOrders', {
+          ...existingOrder,
+          materialItem: formattedItems,
+          qty: totalQty,
+          unitPrice: totalQty > 0 ? parseFloat((custTotal / totalQty).toFixed(2)) : custTotal,
+          totalPrice: custTotal,
+          wholesaleTotal: wholesaleTotal,
+          netProfit: netProfit,
+          customerName: custName || existingOrder.customerName,
+          contactNo: phone || existingOrder.contactNo,
+          invoiceNo: invNo
+        });
+        showToast(`✓ Updated Component Order #${currentMappedComponentOrderId} with ${currentItems.length} items!`, 'success');
+        return;
+      }
+    }
+
+    // Create a new component order
+    const newOrder = {
+      customerName: custName,
+      orderType: 'Component Order',
+      orderDate: dateVal,
+      materialItem: formattedItems,
+      qty: totalQty || 1,
+      unitPrice: totalQty > 0 ? parseFloat((custTotal / totalQty).toFixed(2)) : custTotal,
+      totalPrice: custTotal,
+      received: isPaid ? custTotal : 0,
+      balance: isPaid ? 0 : custTotal,
+      wholesaleTotal: wholesaleTotal,
+      wholesaler: 'Rajindra Electronics',
+      porterCharge: 0,
+      netProfit: netProfit,
+      orderStatus: 'pending',
+      wholesaleStatus: 'pending',
+      contactNo: phone,
+      notes: `From Tax Invoice ${invNo}`,
+      invoiceNo: invNo
+    };
+
+    const newOrderId = await add('materialOrders', newOrder);
+    currentMappedComponentOrderId = newOrderId;
+    
+    if (mapSelect) {
+      const opt = document.createElement('option');
+      opt.value = newOrderId;
+      opt.textContent = `#${newOrderId} • ${custName} — ${formattedItems.replace(/[\r\n]+/g, ' ').substring(0, 40)} (${formatCurrency(custTotal)})`;
+      mapSelect.appendChild(opt);
+      mapSelect.value = newOrderId;
+    }
+    if (mapBadge) {
+      mapBadge.className = 'status-badge completed';
+      mapBadge.textContent = `✓ Mapped to Order #${newOrderId}`;
+    }
+    if (unlinkBtn) unlinkBtn.style.display = 'flex';
+    const pushBtnText = document.getElementById('btn-modal-push-to-order-text');
+    if (pushBtnText) pushBtnText.textContent = `Sync List to Order #${newOrderId}`;
+
+    materialOrders = await getAll('materialOrders');
+    showToast(`✓ Created Component Order #${newOrderId} from invoice list!`, 'success');
   });
 
   projectSelect?.addEventListener('change', () => {
@@ -1142,6 +1368,18 @@ export async function openInvoiceStudioModal(existingInvoice = null, preselected
       }
 
       // Bi-directional link updates with materialOrders
+      const syncToOrder = document.getElementById('chk-sync-to-component-order')?.checked;
+      const formattedItems = (invoiceRecord.items || []).map(item => {
+        const qty = item.quantity || 1;
+        const name = item.description || item.name || 'Component';
+        return `• ${name} (${qty})`;
+      }).join('\n');
+      const totalQty = (invoiceRecord.items || []).reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
+      const custTotal = parseFloat(invoiceRecord.customer?.grand_total || 0);
+      const wholesaleTotal = parseFloat(invoiceRecord.internal?.total_wholesale_cost || 0);
+      const netProfit = parseFloat(invoiceRecord.internal?.final_net_profit || 0);
+      const isPaid = (invoiceRecord.metadata?.payment_status || '').toLowerCase() === 'paid';
+
       if (previousMappedOrderId && previousMappedOrderId !== currentMappedComponentOrderId) {
         const prevOrder = materialOrders.find(m => m.id === previousMappedOrderId);
         if (prevOrder) {
@@ -1156,12 +1394,51 @@ export async function openInvoiceStudioModal(existingInvoice = null, preselected
       if (currentMappedComponentOrderId) {
         const newOrder = materialOrders.find(m => m.id === currentMappedComponentOrderId);
         if (newOrder) {
-          await update('materialOrders', {
+          const updatedOrder = {
             ...newOrder,
             invoiceId: savedInvoiceId,
             invoiceNo: invoiceRecord.metadata?.invoice_no
-          });
+          };
+          if (syncToOrder) {
+            updatedOrder.materialItem = formattedItems || updatedOrder.materialItem;
+            updatedOrder.qty = totalQty || updatedOrder.qty;
+            updatedOrder.unitPrice = totalQty > 0 ? parseFloat((custTotal / totalQty).toFixed(2)) : custTotal;
+            updatedOrder.totalPrice = custTotal;
+            updatedOrder.wholesaleTotal = wholesaleTotal;
+            updatedOrder.netProfit = netProfit;
+            if (isPaid && (!updatedOrder.received || updatedOrder.received < custTotal)) {
+              updatedOrder.received = custTotal;
+              updatedOrder.balance = 0;
+            }
+          }
+          await update('materialOrders', updatedOrder);
         }
+      } else if (syncToOrder && (invoiceRecord.items || []).length > 0) {
+        const newMaterial = {
+          customerName: invoiceRecord.metadata?.customer_name || 'Customer',
+          orderType: 'Component Order',
+          orderDate: invoiceRecord.metadata?.invoice_date || new Date().toISOString().split('T')[0],
+          materialItem: formattedItems,
+          qty: totalQty || 1,
+          unitPrice: totalQty > 0 ? parseFloat((custTotal / totalQty).toFixed(2)) : custTotal,
+          totalPrice: custTotal,
+          received: isPaid ? custTotal : 0,
+          balance: isPaid ? 0 : custTotal,
+          wholesaleTotal: wholesaleTotal,
+          wholesaler: 'Rajindra Electronics',
+          porterCharge: 0,
+          netProfit: netProfit,
+          orderStatus: 'pending',
+          wholesaleStatus: 'pending',
+          contactNo: invoiceRecord.metadata?.phone || '',
+          notes: `From Tax Invoice ${invoiceRecord.metadata?.invoice_no || ''}`,
+          invoiceId: savedInvoiceId,
+          invoiceNo: invoiceRecord.metadata?.invoice_no || ''
+        };
+        const createdOrderId = await add('materialOrders', newMaterial);
+        invoiceRecord.mappedComponentOrderId = createdOrderId;
+        invoiceRecord.metadata.component_order_id = createdOrderId;
+        await update('invoices', invoiceRecord);
       }
 
       overlay.classList.add('hidden');
@@ -1190,6 +1467,12 @@ export function showInvoicePreview(invoice, defaultTab = 'invoice') {
   document.querySelectorAll('.preview-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === currentPreviewTab);
   });
+
+  const exportBtnText = document.getElementById('btn-export-to-component-order-text');
+  if (exportBtnText) {
+    const mappedId = invoice.mappedComponentOrderId || invoice.metadata?.component_order_id;
+    exportBtnText.textContent = mappedId ? `Sync to Component Order #${mappedId}` : 'Add List to Component Order';
+  }
 
   renderActivePreview(invoice);
 }
