@@ -25,9 +25,9 @@ export function renderProjectOrders() {
         <p class="page-subtitle">Manage customer project orders, wholesale procurement costs, payments, and delivery status</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn-secondary" id="btn-sync-seed-data" title="Sync with Verified 33 Spreadsheet Orders">
+        <button class="btn-secondary" id="btn-sync-seed-data" title="Sync with Verified 37 Orders">
           <span class="material-icons-round">sync</span>
-          <span>Sync 33 Orders</span>
+          <span>Sync 37 Orders</span>
         </button>
         <button class="btn-primary" id="btn-add-project">
           <span class="material-icons-round">add</span>
@@ -311,13 +311,13 @@ function bindProjectEvents() {
   // Sync Sheet Data button
   document.getElementById('btn-sync-seed-data')?.addEventListener('click', async () => {
     const confirmed = await showConfirm(
-      'Sync 33 Orders from Sheet',
-      'This will reload all 33 verified project orders from the official spreadsheet tracker. Continue?'
+      'Sync 37 Orders',
+      'This will reload all 37 verified project orders. Continue?'
     );
     if (confirmed) {
       await resetProjectOrdersToSeed(seedProjectOrders);
-      localStorage.setItem('pm_verified_33_orders', 'true');
-      showToast('All 33 project orders synchronized successfully!', 'success');
+      localStorage.setItem('pm_verified_37_orders', 'true');
+      showToast('All 37 project orders synchronized successfully!', 'success');
       currentPage = 1;
       await loadProjectOrders();
       renderProjectStats();

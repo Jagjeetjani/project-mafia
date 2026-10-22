@@ -1,135 +1,185 @@
 /**
- * Database Module — IndexedDB wrapper using idb
- * Stores all project and material order data locally
+ * Database Module — 100% Cloud-Native with Firebase Realtime Database
+ * All data is stored directly in Firebase Cloud.
+ * Real-time synchronization guarantees updates on laptop, mobile, or any device instantly reflect across all devices.
  */
-import { openDB } from 'idb';
+import {
+  initFirebase,
+  cloudSave,
+  cloudDelete,
+  cloudClear,
+  cloudBulkSave,
+  cloudGetAll,
+  cloudGetById,
+  subscribeToStore,
+  CLOUD_STORES
+} from './firebase.js';
 
-const DB_NAME = 'ProjectMafiaDB';
-const DB_VERSION = 2;
+// In-memory responsive cache for instant UI performance
+const memoryCache = new Map();
+let isInitialized = false;
 
-let dbInstance = null;
-
+/**
+ * Initialize Cloud Database and establish real-time listeners across all devices
+ */
 export async function initDB() {
-  if (dbInstance) return dbInstance;
+  if (isInitialized) return true;
 
-  dbInstance = await openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      // Project Orders Store
-      if (!db.objectStoreNames.contains('projectOrders')) {
-        const projectStore = db.createObjectStore('projectOrders', {
-          keyPath: 'id',
-          autoIncrement: true,
+  initFirebase();
+
+  // Load all stores from Cloud and subscribe to real-time events
+  await Promise.all(
+    CLOUD_STORES.map(async (storeName) => {
+      try {
+        const items = await cloudGetAll(storeName);
+        memoryCache.set(storeName, items);
+
+        // Real-time listener: any device changes data -> all devices update immediately
+        subscribeToStore(storeName, (updatedItems) => {
+          memoryCache.set(storeName, updatedItems);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('cloud-data-changed', {
+                detail: { storeName, count: updatedItems.length }
+              })
+            );
+          }
         });
-        projectStore.createIndex('name', 'name');
-        projectStore.createIndex('status', 'status');
-        projectStore.createIndex('orderDate', 'orderDate');
+      } catch (err) {
+        console.warn(`Error loading cloud store ${storeName}:`, err);
+        memoryCache.set(storeName, []);
       }
+    })
+  );
 
-      // Material Orders Store
-      if (!db.objectStoreNames.contains('materialOrders')) {
-        const materialStore = db.createObjectStore('materialOrders', {
-          keyPath: 'id',
-          autoIncrement: true,
-        });
-        materialStore.createIndex('customerName', 'customerName');
-        materialStore.createIndex('orderType', 'orderType');
-        materialStore.createIndex('orderDate', 'orderDate');
-        materialStore.createIndex('orderStatus', 'orderStatus');
-        materialStore.createIndex('batchId', 'batchId');
-      }
-
-      // Customers Store
-      if (!db.objectStoreNames.contains('customers')) {
-        const customerStore = db.createObjectStore('customers', {
-          keyPath: 'id',
-          autoIncrement: true,
-        });
-        customerStore.createIndex('name', 'name');
-        customerStore.createIndex('phone', 'phone');
-      }
-
-      // Invoices Store
-      if (!db.objectStoreNames.contains('invoices')) {
-        const invoiceStore = db.createObjectStore('invoices', {
-          keyPath: 'id',
-          autoIncrement: true,
-        });
-        invoiceStore.createIndex('customerName', 'customerName');
-        invoiceStore.createIndex('date', 'date');
-        invoiceStore.createIndex('invoiceNumber', 'invoiceNumber');
-      }
-
-      // Porter Batches Store
-      if (!db.objectStoreNames.contains('porterBatches')) {
-        const batchStore = db.createObjectStore('porterBatches', {
-          keyPath: 'id',
-          autoIncrement: true,
-        });
-        batchStore.createIndex('lotId', 'lotId', { unique: true });
-        batchStore.createIndex('date', 'date');
-      }
-    },
-  });
-
-  return dbInstance;
+  isInitialized = true;
+  return true;
 }
 
-// === Generic CRUD Operations ===
+// === Generic Cloud CRUD Operations ===
 
 export async function getAll(storeName) {
-  const db = await initDB();
-  return db.getAll(storeName);
+  if (!isInitialized) await initDB();
+
+  if (memoryCache.has(storeName)) {
+    return JSON.parse(JSON.stringify(memoryCache.get(storeName)));
+  }
+
+  const items = await cloudGetAll(storeName);
+  memoryCache.set(storeName, items);
+  return items;
 }
 
 export async function getById(storeName, id) {
-  const db = await initDB();
-  return db.get(storeName, id);
+  if (!isInitialized) await initDB();
+
+  const numId = parseInt(id, 10);
+  const items = memoryCache.get(storeName) || [];
+  const found = items.find(i => i.id === numId || i.id === id || String(i.id) === String(id));
+  if (found) return JSON.parse(JSON.stringify(found));
+
+  return cloudGetById(storeName, id);
 }
 
 export async function add(storeName, data) {
-  const db = await initDB();
-  data.createdAt = new Date().toISOString();
+  if (!isInitialized) await initDB();
+
+  const items = memoryCache.get(storeName) || [];
+  // Assign next sequential numeric ID
+  let maxId = 0;
+  for (const item of items) {
+    const n = parseInt(item.id, 10);
+    if (!isNaN(n) && n > maxId) maxId = n;
+  }
+  const newId = maxId + 1;
+
+  data.id = newId;
+  data.createdAt = data.createdAt || new Date().toISOString();
   data.updatedAt = new Date().toISOString();
-  return db.add(storeName, data);
+
+  // Save directly to Firebase Cloud
+  await cloudSave(storeName, data);
+
+  // Update in-memory cache
+  items.push(data);
+  memoryCache.set(storeName, items);
+
+  return newId;
 }
 
 export async function update(storeName, data) {
-  const db = await initDB();
+  if (!isInitialized) await initDB();
+
   data.updatedAt = new Date().toISOString();
-  return db.put(storeName, data);
+
+  // Save directly to Firebase Cloud
+  await cloudSave(storeName, data);
+
+  // Update in-memory cache
+  const items = memoryCache.get(storeName) || [];
+  const idx = items.findIndex(i => String(i.id) === String(data.id));
+  if (idx !== -1) {
+    items[idx] = data;
+  } else {
+    items.push(data);
+  }
+  memoryCache.set(storeName, items);
+
+  return data.id;
 }
 
 export async function remove(storeName, id) {
-  const db = await initDB();
-  return db.delete(storeName, id);
+  if (!isInitialized) await initDB();
+
+  // Delete directly from Firebase Cloud
+  await cloudDelete(storeName, id);
+
+  // Update in-memory cache
+  const items = memoryCache.get(storeName) || [];
+  const filtered = items.filter(i => String(i.id) !== String(id));
+  memoryCache.set(storeName, filtered);
+
+  return true;
 }
 
 export async function clearStore(storeName) {
-  const db = await initDB();
-  return db.clear(storeName);
+  if (!isInitialized) await initDB();
+
+  await cloudClear(storeName);
+  memoryCache.set(storeName, []);
+  return true;
 }
 
 export async function count(storeName) {
-  const db = await initDB();
-  return db.count(storeName);
+  const items = await getAll(storeName);
+  return items.length;
 }
 
-// === Bulk Operations ===
-
 export async function bulkAdd(storeName, items) {
-  const db = await initDB();
-  const tx = db.transaction(storeName, 'readwrite');
-  const store = tx.objectStore(storeName);
-  const now = new Date().toISOString();
+  if (!isInitialized) await initDB();
+  if (!items || !items.length) return 0;
 
-  for (const item of items) {
-    item.createdAt = now;
-    item.updatedAt = now;
-    await store.add(item);
+  const existing = memoryCache.get(storeName) || [];
+  let maxId = 0;
+  for (const item of existing) {
+    const n = parseInt(item.id, 10);
+    if (!isNaN(n) && n > maxId) maxId = n;
   }
 
-  await tx.done;
-  return items.length;
+  const now = new Date().toISOString();
+  const prepared = items.map((item, index) => {
+    const clean = { ...item };
+    if (clean.id === undefined || clean.id === null) {
+      clean.id = maxId + index + 1;
+    }
+    clean.createdAt = clean.createdAt || now;
+    clean.updatedAt = clean.updatedAt || now;
+    return clean;
+  });
+
+  await cloudBulkSave(storeName, prepared);
+  memoryCache.set(storeName, [...existing, ...prepared]);
+  return prepared.length;
 }
 
 // === Project Orders Specific ===
@@ -256,7 +306,7 @@ export async function getDashboardStats() {
   };
 }
 
-// === Export Data ===
+// === Export / Import Data ===
 
 export async function exportAllData() {
   const [projectOrders, materialOrders, customers, invoices, porterBatches] = await Promise.all([
@@ -269,7 +319,7 @@ export async function exportAllData() {
 
   return {
     exportDate: new Date().toISOString(),
-    version: DB_VERSION,
+    version: 2,
     data: {
       projectOrders,
       materialOrders,
@@ -280,20 +330,13 @@ export async function exportAllData() {
   };
 }
 
-// === Import Data ===
-
 export async function importData(jsonData) {
   const counts = { projectOrders: 0, materialOrders: 0, customers: 0, invoices: 0, porterBatches: 0 };
 
   if (jsonData.data) {
     for (const [storeName, items] of Object.entries(jsonData.data)) {
       if (Array.isArray(items) && items.length > 0) {
-        // Remove IDs to let auto-increment work
-        const cleanItems = items.map(item => {
-          const { id, ...rest } = item;
-          return rest;
-        });
-        counts[storeName] = await bulkAdd(storeName, cleanItems);
+        counts[storeName] = await bulkAdd(storeName, items);
       }
     }
   }
@@ -308,9 +351,6 @@ export async function getPorterBatches() {
   return batches.sort((a, b) => (b.lotId || '').localeCompare(a.lotId || ''));
 }
 
-/**
- * Recalculate and synchronize a Porter Batch across all associated material orders
- */
 export async function syncPorterBatchAllocation(batchLotId) {
   const batches = await getAll('porterBatches');
   const batch = batches.find(b => b.lotId === batchLotId);
@@ -334,7 +374,6 @@ export async function syncPorterBatchAllocation(batchLotId) {
     totalWholesaleCost += parseFloat(order.wholesaleTotal) || 0;
     if (batch.allocationMode === 'Equal Split') {
       order.porterCharge = deliveryCostPerOrder;
-      // Recalculate net profit: Total received/price - wholesale - porter
       const unitPrice = parseFloat(order.totalPrice || order.unitPrice) || 0;
       const wholesale = parseFloat(order.wholesaleTotal || order.wholesaleRate) || 0;
       order.netProfit = parseFloat((unitPrice - wholesale - deliveryCostPerOrder).toFixed(2));
@@ -352,16 +391,12 @@ export async function syncPorterBatchAllocation(batchLotId) {
   return batch;
 }
 
-/**
- * Link a project order to a material order to auto-inherit wholesale cost
- */
 export async function linkProjectToMaterial(projectId, materialOrderId, miscExpenses = null) {
   const project = await getById('projectOrders', parseInt(projectId));
   const material = await getById('materialOrders', parseInt(materialOrderId));
 
   if (!project || !material) return null;
 
-  // Wholesale cost taken directly from material order
   const wholesaleCost = parseFloat(material.wholesaleTotal || material.wholesaleRate) || 0;
   project.materialOrderId = material.id;
   project.materialCost = wholesaleCost;
@@ -380,30 +415,30 @@ export async function linkProjectToMaterial(projectId, materialOrderId, miscExpe
 
   await update('projectOrders', project);
 
-  // Mark material order with linked project order
   material.linkedProjectId = project.id;
   await update('materialOrders', material);
 
   return project;
 }
 
-/**
- * Reset and reload project orders to exact verified seed data
- */
 export async function resetProjectOrdersToSeed(seedOrders) {
   await clearStore('projectOrders');
   const items = JSON.parse(JSON.stringify(seedOrders));
-  await bulkAdd('projectOrders', items);
+  for (let i = 0; i < items.length; i++) {
+    items[i].id = items[i].id || (i + 1);
+  }
+  await cloudBulkSave('projectOrders', items);
+  memoryCache.set('projectOrders', items);
   return items.length;
 }
 
-/**
- * Reset and reload material orders to exact verified seed data
- */
 export async function resetMaterialOrdersToSeed(seedOrders) {
   await clearStore('materialOrders');
   const items = JSON.parse(JSON.stringify(seedOrders));
-  await bulkAdd('materialOrders', items);
+  for (let i = 0; i < items.length; i++) {
+    items[i].id = items[i].id || (i + 1);
+  }
+  await cloudBulkSave('materialOrders', items);
+  memoryCache.set('materialOrders', items);
   return items.length;
 }
-

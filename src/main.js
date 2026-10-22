@@ -3,7 +3,11 @@
  * Routing, Quick Add, Global Search, Notifications, Database Seeding
  * Enhanced with Porter Batches, Mutual Dropdown Closing & Wholesaler Sync
  */
-import { initDB, getAll, bulkAdd, count, add, clearStore, resetProjectOrdersToSeed, resetMaterialOrdersToSeed } from './db.js';
+import {
+  initDB, getAll, bulkAdd, count, add, clearStore,
+  resetProjectOrdersToSeed, resetMaterialOrdersToSeed
+} from './db.js';
+import { isCloudConnected } from './firebase.js';
 import { renderDashboard, initDashboard } from './pages/dashboard.js';
 import { renderProjectOrders, initProjectOrders, openProjectModal } from './pages/projects.js';
 import { renderMaterialOrders, initMaterialOrders, openMaterialModal } from './pages/materials.js';
@@ -39,6 +43,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupNotifications();
     setupSidebarToggle();
     setupKeyboardShortcuts();
+    setupCloudSyncPill();
+
+    // Cross-device real-time sync listener:
+    // When any device modifies data, instantly refresh badges and active view!
+    window.addEventListener('cloud-data-changed', async (e) => {
+      const { storeName } = e.detail || {};
+      await updateSidebarBadges();
+
+      const storeToRouteMap = {
+        projectOrders: 'projects',
+        materialOrders: 'materials',
+        porterBatches: 'batches',
+        customers: 'customers',
+        invoices: 'invoices',
+      };
+
+      if (currentPage === 'dashboard' || (storeToRouteMap[storeName] && currentPage === storeToRouteMap[storeName])) {
+        const overlay = document.getElementById('modal-overlay');
+        if (!overlay || overlay.classList.contains('hidden')) {
+          const container = document.getElementById('page-container');
+          if (container && routes[currentPage]) {
+            container.innerHTML = routes[currentPage].render();
+            try {
+              await routes[currentPage].init();
+            } catch (err) {
+              console.error(`Error refreshing page ${currentPage}:`, err);
+            }
+          }
+        }
+      }
+    });
 
     // Check URL hash for initial route
     const hash = window.location.hash.replace('#', '').trim();
@@ -48,10 +83,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       navigate('dashboard');
     }
 
-    // Update storage status indicator
+    // Update storage status indicator in sidebar footer
     const storageEl = document.getElementById('storage-status');
     if (storageEl) {
-      storageEl.innerHTML = `<span style="color:var(--text-success);font-weight:600">● 33 Projects & 40 Materials Active</span>`;
+      storageEl.innerHTML = `<span style="color:var(--text-success);font-weight:600">● Firebase Cloud Live</span>`;
     }
   } catch (err) {
     console.error('Initialization error:', err);
@@ -60,39 +95,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /**
- * Check if DB is empty or needs update to verified 33 projects and 40 material records with clean names
+ * Seed database if completely empty in cloud
  */
 async function checkAndSeedDatabase() {
   const pCount = await count('projectOrders');
   const mCount = await count('materialOrders');
   const bCount = await count('porterBatches');
-  const pVerified = localStorage.getItem('pm_verified_33_orders');
-  const mVerified = localStorage.getItem('pm_verified_40_materials');
-  const namesCleaned = localStorage.getItem('pm_cleaned_names_v3');
 
+  // Only seed if cloud database is completely empty
   if (pCount === 0 && mCount === 0) {
-    console.log('Seeding initial business records from spreadsheets...');
+    console.log('Seeding initial business records to Firebase Cloud...');
     await bulkAdd('projectOrders', JSON.parse(JSON.stringify(seedProjectOrders)));
     await bulkAdd('materialOrders', JSON.parse(JSON.stringify(seedMaterialOrders)));
     await syncCustomerDirectory(true);
-    localStorage.setItem('pm_verified_33_orders', 'true');
-    localStorage.setItem('pm_verified_40_materials', 'true');
-    localStorage.setItem('pm_cleaned_names_v3', 'true');
-  } else if (namesCleaned !== 'true' || pCount < 33 || mCount < 40) {
-    console.log('Migrating and synchronizing clean names without spreadsheet suffixes and relational links...');
-    await resetProjectOrdersToSeed(seedProjectOrders);
-    await resetMaterialOrdersToSeed(seedMaterialOrders);
-    await syncCustomerDirectory(true);
-    localStorage.setItem('pm_verified_33_orders', 'true');
-    localStorage.setItem('pm_verified_40_materials', 'true');
-    localStorage.setItem('pm_cleaned_names_v3', 'true');
   }
 
   // Seed Porter Batches if empty
   if (bCount === 0 && seedPorterBatches && seedPorterBatches.length > 0) {
-    console.log('Seeding initial Porter Batches...');
+    console.log('Seeding initial Porter Batches to Firebase Cloud...');
     await bulkAdd('porterBatches', JSON.parse(JSON.stringify(seedPorterBatches)));
   }
+}
+
+function setupCloudSyncPill() {
+  const pill = document.getElementById('cloud-sync-pill');
+  const label = document.getElementById('cloud-sync-label');
+
+  window.addEventListener('cloud-sync-status', (e) => {
+    if (!pill || !label) return;
+    const { connected, syncing, text } = e.detail || {};
+    pill.classList.remove('syncing', 'offline');
+    if (syncing) {
+      pill.classList.add('syncing');
+    } else if (!connected) {
+      pill.classList.add('offline');
+    }
+    label.textContent = text || (connected ? 'Firebase Cloud Live' : 'Offline');
+  });
 }
 
 /**
@@ -172,6 +211,14 @@ export async function updateSidebarBadges() {
     if (badgeP) badgeP.textContent = pCount;
     if (badgeM) badgeM.textContent = mCount;
     if (badgeB) badgeB.textContent = bCount;
+
+    // Mobile Bottom Navigation Badges
+    const bottomP = document.getElementById('bottom-badge-projects');
+    const bottomM = document.getElementById('bottom-badge-materials');
+    const bottomB = document.getElementById('bottom-badge-batches');
+    if (bottomP) bottomP.textContent = pCount;
+    if (bottomM) bottomM.textContent = mCount;
+    if (bottomB) bottomB.textContent = bCount;
   } catch (e) {
     console.warn('Could not update badges', e);
   }
@@ -200,6 +247,15 @@ export async function navigate(pageId) {
     }
   });
 
+  // Update active bottom navigation state (iOS)
+  document.querySelectorAll('.bottom-nav-item').forEach(el => {
+    if (el.dataset.page === pageId) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+
   // Render Page Content
   const container = document.getElementById('page-container');
   if (!container) return;
@@ -213,12 +269,12 @@ export async function navigate(pageId) {
     console.error(`Error initializing page ${pageId}:`, err);
   }
 
-  // Refresh badges in sidebar
+  // Refresh badges in sidebar & bottom nav
   updateSidebarBadges();
 }
 
 /**
- * Setup Sidebar Navigation Clicks
+ * Setup Sidebar Navigation & Mobile Bottom Nav Clicks
  */
 function setupNavigation() {
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -227,13 +283,37 @@ function setupNavigation() {
       const page = item.dataset.page;
       if (page) {
         navigate(page);
-        // On mobile, close sidebar after navigation
-        if (window.innerWidth < 1024) {
-          document.getElementById('sidebar')?.classList.remove('open');
-        }
+        // On mobile, close sidebar & backdrop after navigation
+        document.getElementById('sidebar')?.classList.remove('open');
+        document.getElementById('sidebar-backdrop')?.classList.remove('active');
       }
     });
   });
+
+  // Mobile Bottom Navigation clicks (iOS)
+  document.querySelectorAll('.bottom-nav-item[data-page]').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const page = item.dataset.page;
+      if (page) {
+        navigate(page);
+        document.getElementById('sidebar')?.classList.remove('open');
+        document.getElementById('sidebar-backdrop')?.classList.remove('active');
+      }
+    });
+  });
+
+  // Mobile "More" button toggles sidebar drawer
+  const bottomMenuBtn = document.getElementById('bottom-nav-menu');
+  if (bottomMenuBtn) {
+    bottomMenuBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const isOpen = sidebar?.classList.toggle('open');
+      backdrop?.classList.toggle('active', !!isOpen);
+    });
+  }
 
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace('#', '').trim();
@@ -662,10 +742,27 @@ async function refreshNotifications(dot, dropdown) {
 function setupSidebarToggle() {
   const toggleBtn = document.getElementById('sidebar-toggle');
   const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+
+  if (backdrop) {
+    backdrop.addEventListener('click', () => {
+      sidebar?.classList.remove('open');
+      backdrop.classList.remove('active');
+    });
+  }
+
+  const closeBtn = document.getElementById('sidebar-close-btn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      sidebar?.classList.remove('open');
+      backdrop?.classList.remove('active');
+    });
+  }
 
   if (toggleBtn && sidebar) {
     toggleBtn.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
+      const isOpen = sidebar.classList.toggle('open');
+      backdrop?.classList.toggle('active', isOpen);
     });
   }
 }

@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="description" content="Project Mafia - Business Management Software for Ready-Made Projects & Components" />
   <title>Project Mafia — Business Manager</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <link rel="manifest" href="./manifest.json" />
-  <meta name="theme-color" content="#7e14ff" />
+  <meta name="theme-color" content="#0a0e1a" />
+  <!-- iOS Safari PWA / Fullscreen Optimization -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Project Mafia" />
+  <meta name="format-detection" content="telephone=no" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -28,6 +33,9 @@
             <span class="logo-subtitle">Business Manager</span>
           </div>
         </div>
+        <button id="sidebar-close-btn" class="sidebar-close-btn" title="Close menu">
+          <span class="material-icons-round">close</span>
+        </button>
       </div>
 
       <nav class="sidebar-nav">
@@ -103,6 +111,10 @@
           </button>
         </div>
         <div class="topbar-actions">
+          <div class="cloud-sync-pill" id="cloud-sync-pill" title="Firebase Realtime Cloud Database (Active & Synced across all devices)">
+            <span class="cloud-sync-dot"></span>
+            <span id="cloud-sync-label">Firebase Cloud Live</span>
+          </div>
           <button class="btn-icon" id="btn-notifications" title="Notifications">
             <span class="material-icons-round">notifications</span>
             <span class="notification-dot" id="notification-dot"></span>
@@ -120,6 +132,36 @@
       </div>
     </main>
   </div>
+
+  <!-- Mobile Bottom Navigation (iOS Tab Bar) -->
+  <nav id="mobile-bottom-nav" class="mobile-bottom-nav" aria-label="Mobile Navigation">
+    <button class="bottom-nav-item active" data-page="dashboard" title="Dashboard">
+      <span class="material-icons-round">dashboard</span>
+      <span>Dashboard</span>
+    </button>
+    <button class="bottom-nav-item" data-page="projects" title="Project Orders">
+      <span class="material-icons-round">inventory_2</span>
+      <span>Projects</span>
+      <span class="bottom-nav-badge" id="bottom-badge-projects">37</span>
+    </button>
+    <button class="bottom-nav-item" data-page="materials" title="Material Orders">
+      <span class="material-icons-round">shopping_cart</span>
+      <span>Materials</span>
+      <span class="bottom-nav-badge" id="bottom-badge-materials">40</span>
+    </button>
+    <button class="bottom-nav-item" data-page="batches" title="Porter Batches">
+      <span class="material-icons-round">local_shipping</span>
+      <span>Batches</span>
+      <span class="bottom-nav-badge" id="bottom-badge-batches">7</span>
+    </button>
+    <button class="bottom-nav-item" id="bottom-nav-menu" title="More Menu">
+      <span class="material-icons-round">menu</span>
+      <span>More</span>
+    </button>
+  </nav>
+
+  <!-- Sidebar Backdrop for Mobile Touch Dismissal -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
 
   <!-- Modal Overlay -->
   <div id="modal-overlay" class="modal-overlay hidden">

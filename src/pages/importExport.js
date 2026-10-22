@@ -1,5 +1,6 @@
 /**
- * Import / Export Page — CSV import and JSON backup
+ * Import / Export Page — CSV Import and JSON Cloud Backup / Restore
+ * Directly connected to Firebase Cloud
  */
 import { bulkAdd, exportAllData, importData, clearStore, getAll } from '../db.js';
 import {
@@ -12,7 +13,7 @@ export function renderImportExport() {
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">Import / Export</h1>
-        <p class="page-subtitle">Import data from CSV files or backup/restore your database</p>
+        <p class="page-subtitle">Import data from CSV files or download/restore your cloud database backup</p>
       </div>
     </div>
 
@@ -32,7 +33,7 @@ export function renderImportExport() {
             </div>
             <h4>Import Project Orders (CSV)</h4>
           </div>
-          <p>Import from your Google Sheets "Project Orders Tracker" CSV export.</p>
+          <p>Import from your Google Sheets "Project Orders Tracker" CSV export directly into Firebase Cloud.</p>
           <p style="margin-top:8px; font-size:0.75rem; color:var(--text-tertiary)">Expected columns: S.NO, NAME, PNAME, PAYMENT, RECEIVED, PENDING, ORDER DATE, DUE DATE, MATERIAL COST, MISC EXPENSES, PROFIT, PH.NO, STATUS</p>
         </div>
         <div class="import-option" id="import-material-csv">
@@ -42,7 +43,7 @@ export function renderImportExport() {
             </div>
             <h4>Import Material Orders (CSV)</h4>
           </div>
-          <p>Import from your Google Sheets "Material Orders & Procurement" CSV export.</p>
+          <p>Import from your Google Sheets "Material Orders & Procurement" CSV export directly into Firebase Cloud.</p>
           <p style="margin-top:8px; font-size:0.75rem; color:var(--text-tertiary)">Expected columns: S.NO, CUSTOMER NAME, ORDER TYPE, ORDER DATE, MATERIAL / ITEM, QTY, UNIT PRICE, TOTAL PRICE, BALANCE, etc.</p>
         </div>
         <div class="import-option" id="import-json-backup">
@@ -52,7 +53,7 @@ export function renderImportExport() {
             </div>
             <h4>Restore from Backup (JSON)</h4>
           </div>
-          <p>Restore data from a previously exported JSON backup file.</p>
+          <p>Restore data directly to Firebase Cloud from a previously exported JSON backup file.</p>
         </div>
       </div>
 
@@ -90,7 +91,7 @@ export function renderImportExport() {
             </div>
             <h4>Export Project Orders (CSV)</h4>
           </div>
-          <p>Download all project orders as a CSV file.</p>
+          <p>Download all cloud project orders as a CSV file.</p>
         </div>
         <div class="import-option" id="export-material-csv">
           <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
@@ -99,7 +100,7 @@ export function renderImportExport() {
             </div>
             <h4>Export Material Orders (CSV)</h4>
           </div>
-          <p>Download all material orders as a CSV file.</p>
+          <p>Download all cloud material orders as a CSV file.</p>
         </div>
         <div class="import-option" id="export-full-backup">
           <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
@@ -108,16 +109,16 @@ export function renderImportExport() {
             </div>
             <h4>Full Backup (JSON)</h4>
           </div>
-          <p>Download complete backup of all data (projects, materials, customers, invoices).</p>
+          <p>Download complete backup of all data (projects, materials, customers, invoices) from Firebase Cloud.</p>
         </div>
         <div class="import-option" id="btn-clear-all" style="border-color: rgba(239,68,68,0.2);">
           <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
             <div class="stat-card-icon red">
               <span class="material-icons-round">delete_forever</span>
             </div>
-            <h4 style="color: var(--text-danger);">Clear All Data</h4>
+            <h4 style="color: var(--text-danger);">Clear All Cloud Data</h4>
           </div>
-          <p>Delete all data from the application. This cannot be undone!</p>
+          <p>Delete all data from Firebase Cloud. This cannot be undone!</p>
         </div>
       </div>
     </div>
@@ -176,15 +177,16 @@ function bindImportExportEvents() {
   // Clear all
   document.getElementById('btn-clear-all')?.addEventListener('click', async () => {
     const confirmed = await showConfirm(
-      'Clear All Data',
-      'This will permanently delete ALL your data including project orders, material orders, customers, and invoices. This action CANNOT be undone!'
+      'Clear All Cloud Data',
+      'This will permanently delete ALL your data in Firebase Cloud (projects, materials, customers, and invoices). This action CANNOT be undone!'
     );
     if (confirmed) {
       await clearStore('projectOrders');
       await clearStore('materialOrders');
       await clearStore('customers');
       await clearStore('invoices');
-      showToast('All data has been cleared');
+      await clearStore('porterBatches');
+      showToast('All cloud data has been cleared');
     }
   });
 
@@ -202,152 +204,27 @@ function handleCSVFile(file, type) {
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
-      const rawData = parseCSV(e.target.result);
+      const csvText = e.target.result;
+      const parsed = parseCSV(csvText);
 
-      if (rawData.length === 0) {
-        showToast('No data found in CSV file', 'error');
+      if (parsed.length === 0) {
+        showToast('The CSV file appears to be empty', 'warning');
         return;
       }
 
-      // Map CSV columns to our schema
-      let mappedData;
       if (type === 'projectOrders') {
-        mappedData = mapProjectCSV(rawData);
+        pendingImportData = mapProjectCSVData(parsed);
       } else {
-        mappedData = mapMaterialCSV(rawData);
+        pendingImportData = mapMaterialCSVData(parsed);
       }
 
-      pendingImportData = mappedData;
       pendingImportType = type;
-
-      showImportPreview(mappedData, type);
+      showImportPreview(pendingImportData, type);
     } catch (err) {
-      showToast('Error parsing CSV: ' + err.message, 'error');
+      showToast('Failed to parse CSV: ' + err.message, 'error');
     }
   };
   reader.readAsText(file);
-}
-
-function mapProjectCSV(data) {
-  return data.map(row => {
-    // Try to match columns flexibly
-    const findCol = (...names) => {
-      for (const name of names) {
-        for (const key of Object.keys(row)) {
-          if (key.toLowerCase().trim().replace(/[^a-z0-9]/g, '').includes(name.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
-            return row[key];
-          }
-        }
-      }
-      return '';
-    };
-
-    return {
-      name: findCol('NAME', 'CUSTOMER') || '',
-      projectName: findCol('PNAME', 'PROJECT', 'PROJECTNAME') || '',
-      payment: parseCurrency(findCol('PAYMENT', 'AMOUNT', 'TOTAL')),
-      received: parseCurrency(findCol('RECEIVED', 'PAID')),
-      pending: parseCurrency(findCol('PENDING', 'BALANCE', 'DUE')),
-      orderDate: findCol('ORDERDATE', 'DATE') || '',
-      dueDate: findCol('DUEDATE', 'DEADLINE') || '',
-      materialCost: parseCurrency(findCol('MATERIALCOST', 'MATERIAL')),
-      miscExpenses: parseCurrency(findCol('MISCEXPENSES', 'MISC', 'EXPENSES')),
-      profit: parseCurrency(findCol('PROFIT', 'EARNINGS')),
-      phone: findCol('PHNO', 'PHONE', 'CONTACT', 'MOBILE') || '',
-      status: normalizeStatus(findCol('STATUS', 'STATE') || 'pending'),
-    };
-  }).filter(r => r.name || r.projectName);
-}
-
-function mapMaterialCSV(data) {
-  return data.map(row => {
-    const findCol = (...names) => {
-      for (const name of names) {
-        for (const key of Object.keys(row)) {
-          if (key.toLowerCase().trim().replace(/[^a-z0-9]/g, '').includes(name.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
-            return row[key];
-          }
-        }
-      }
-      return '';
-    };
-
-    return {
-      customerName: findCol('CUSTOMERNAME', 'NAME', 'CUSTOMER') || '',
-      orderType: findCol('ORDERTYPE', 'TYPE') || 'Component Order',
-      orderDate: findCol('ORDERDATE', 'DATE') || '',
-      materialItem: findCol('MATERIALITEM', 'MATERIAL', 'ITEM') || '',
-      qty: parseInt(findCol('QTY', 'QUANTITY')) || 1,
-      unitPrice: parseCurrency(findCol('UNITPRICE', 'PRICE', 'RATE')),
-      totalPrice: parseCurrency(findCol('TOTALPRICE', 'TOTAL')),
-      received: parseCurrency(findCol('RECEIVED', 'PAID')),
-      balance: parseCurrency(findCol('BALANCE', 'DUE', 'PENDING')),
-      wholesaleDate: findCol('WHOLESALEDATE') || '',
-      wholesaleTotal: parseCurrency(findCol('WHOLESALETOTAL', 'WHOLESALE')),
-      porterCharge: parseCurrency(findCol('PORTERCHARGE', 'PORTER', 'DELIVERY')),
-      netProfit: parseCurrency(findCol('NETPROFIT', 'PROFIT')),
-      contactNo: findCol('CONTACTNO', 'CONTACT', 'PHONE', 'MOBILE') || '',
-      orderStatus: normalizeStatus(findCol('ORDERSTATUS', 'STATUS') || 'pending'),
-      wholesaleStatus: findCol('WHOLESALESTATUS') || 'pending',
-      trackingNotes: findCol('TRACKINGNOTES', 'TRACKING', 'NOTES') || '',
-    };
-  }).filter(r => r.customerName || r.materialItem);
-}
-
-function showImportPreview(data, type) {
-  const preview = document.getElementById('import-preview');
-  const previewTable = document.getElementById('import-preview-table');
-  const rowCount = document.getElementById('import-row-count');
-
-  preview.style.display = 'block';
-  rowCount.textContent = `${data.length} rows found`;
-
-  if (data.length === 0) {
-    previewTable.innerHTML = '<p style="padding: 24px; color: var(--text-secondary)">No valid data found. Please check your CSV format.</p>';
-    return;
-  }
-
-  const headers = Object.keys(data[0]);
-  const displayData = data.slice(0, 10); // Show first 10 rows
-
-  previewTable.innerHTML = `
-    <table class="data-table">
-      <thead>
-        <tr>
-          ${headers.map(h => `<th>${h}</th>`).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${displayData.map(row => `
-          <tr>
-            ${headers.map(h => `<td>${row[h] ?? '—'}</td>`).join('')}
-          </tr>
-        `).join('')}
-        ${data.length > 10 ? `
-          <tr>
-            <td colspan="${headers.length}" style="text-align:center; color: var(--text-secondary); font-style:italic;">
-              ... and ${data.length - 10} more rows
-            </td>
-          </tr>
-        ` : ''}
-      </tbody>
-    </table>
-  `;
-}
-
-async function confirmImport() {
-  if (!pendingImportData || !pendingImportType) return;
-
-  try {
-    const count = await bulkAdd(pendingImportType, pendingImportData);
-    showToast(`Successfully imported ${count} records!`);
-
-    pendingImportData = null;
-    pendingImportType = '';
-    document.getElementById('import-preview').style.display = 'none';
-  } catch (err) {
-    showToast('Import error: ' + err.message, 'error');
-  }
 }
 
 function handleJSONFile(file) {
@@ -357,19 +234,159 @@ function handleJSONFile(file) {
   reader.onload = async (e) => {
     try {
       const jsonData = JSON.parse(e.target.result);
-      const counts = await importData(jsonData);
+      if (!jsonData.data) {
+        showToast('Invalid backup file format', 'error');
+        return;
+      }
 
-      const summary = Object.entries(counts)
-        .filter(([_, v]) => v > 0)
-        .map(([k, v]) => `${v} ${k}`)
-        .join(', ');
+      const confirmed = await showConfirm(
+        'Restore Database',
+        'This will import all data from the backup file into Firebase Cloud. Existing records may be overwritten or appended. Continue?'
+      );
 
-      showToast(summary ? `Imported: ${summary}` : 'No data found in backup file');
+      if (confirmed) {
+        const counts = await importData(jsonData);
+        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+        showToast(`Successfully imported ${total} records into Firebase Cloud!`, 'success');
+      }
     } catch (err) {
-      showToast('Error reading backup: ' + err.message, 'error');
+      showToast('Failed to parse JSON backup: ' + err.message, 'error');
     }
   };
   reader.readAsText(file);
+}
+
+function mapProjectCSVData(rows) {
+  return rows.map((row, index) => {
+    const payment = parseCurrency(row['PAYMENT'] || row['payment'] || '0');
+    const received = parseCurrency(row['RECEIVED'] || row['received'] || '0');
+    const pending = parseCurrency(row['PENDING'] || row['pending'] || '0');
+    const materialCost = parseCurrency(row['MATERIAL COST'] || row['materialCost'] || '0');
+    const miscExpenses = parseCurrency(row['MISC EXPENSES'] || row['miscExpenses'] || '0');
+    const profit = parseCurrency(row['PROFIT'] || row['profit'] || '0');
+
+    return {
+      name: (row['NAME'] || row['name'] || '').trim(),
+      projectName: (row['PNAME'] || row['PROJECT NAME'] || row['projectName'] || '').trim(),
+      payment,
+      received,
+      pending: pending || (payment - received),
+      orderDate: row['ORDER DATE'] || row['orderDate'] || new Date().toISOString().split('T')[0],
+      dueDate: row['DUE DATE'] || row['dueDate'] || '',
+      materialCost,
+      miscExpenses,
+      profit: profit || (payment - materialCost - miscExpenses),
+      phone: (row['PH.NO'] || row['PHONE'] || row['phone'] || '').trim(),
+      status: normalizeStatus(row['STATUS'] || row['status'] || 'pending'),
+    };
+  }).filter(o => o.name && o.projectName);
+}
+
+function mapMaterialCSVData(rows) {
+  return rows.map((row) => {
+    const qty = parseInt(row['QTY'] || row['qty'] || '1') || 1;
+    const unitPrice = parseCurrency(row['UNIT PRICE'] || row['unitPrice'] || '0');
+    const totalPrice = parseCurrency(row['TOTAL PRICE'] || row['totalPrice'] || '0') || (qty * unitPrice);
+    const received = parseCurrency(row['RECEIVED'] || row['received'] || '0');
+    const balance = parseCurrency(row['BALANCE'] || row['balance'] || '0') || (totalPrice - received);
+    const wholesaleTotal = parseCurrency(row['WHOLESALE TOTAL'] || row['wholesaleTotal'] || '0');
+    const porterCharge = parseCurrency(row['PORTER CHARGE'] || row['porterCharge'] || '0');
+    const netProfit = parseCurrency(row['NET PROFIT'] || row['netProfit'] || '0') || (totalPrice - wholesaleTotal - porterCharge);
+
+    return {
+      customerName: (row['CUSTOMER NAME'] || row['customerName'] || '').trim(),
+      orderType: (row['ORDER TYPE'] || row['orderType'] || 'Material Order').trim(),
+      orderDate: row['ORDER DATE'] || row['orderDate'] || new Date().toISOString().split('T')[0],
+      materialItem: (row['MATERIAL / ITEM'] || row['materialItem'] || '').trim(),
+      qty,
+      unitPrice,
+      totalPrice,
+      received,
+      balance,
+      wholesaler: (row['WHOLESALER'] || row['wholesaler'] || '').trim(),
+      wholesaleTotal,
+      wholesaleRate: wholesaleTotal,
+      batchId: (row['BATCH ID'] || row['batchId'] || '').trim(),
+      porterCharge,
+      netProfit,
+      wholesalerStatus: (row['WHOLESALER STATUS'] || row['wholesalerStatus'] || 'Pending').trim(),
+      orderStatus: normalizeStatus(row['ORDER STATUS'] || row['orderStatus'] || 'pending'),
+      contactNo: (row['CONTACT NO'] || row['contactNo'] || '').trim(),
+      notes: (row['TRACKING/NOTES'] || row['notes'] || '').trim(),
+    };
+  }).filter(o => o.customerName && o.materialItem);
+}
+
+function showImportPreview(data, type) {
+  const container = document.getElementById('import-preview');
+  const countEl = document.getElementById('import-row-count');
+  const tableEl = document.getElementById('import-preview-table');
+
+  countEl.textContent = `${data.length} valid rows found`;
+
+  let headers = [];
+  if (type === 'projectOrders') {
+    headers = ['Name', 'Project', 'Payment', 'Received', 'Order Date', 'Status'];
+  } else {
+    headers = ['Customer', 'Type', 'Item', 'Qty', 'Total', 'Status'];
+  }
+
+  let html = `
+    <table class="data-table">
+      <thead>
+        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+  `;
+
+  const previewRows = data.slice(0, 10);
+  previewRows.forEach(row => {
+    if (type === 'projectOrders') {
+      html += `
+        <tr>
+          <td>${row.name}</td>
+          <td>${row.projectName}</td>
+          <td>₹${row.payment.toLocaleString('en-IN')}</td>
+          <td>₹${row.received.toLocaleString('en-IN')}</td>
+          <td>${row.orderDate}</td>
+          <td><span class="badge badge-${row.status}">${row.status}</span></td>
+        </tr>
+      `;
+    } else {
+      html += `
+        <tr>
+          <td>${row.customerName}</td>
+          <td>${row.orderType}</td>
+          <td>${row.materialItem}</td>
+          <td>${row.qty}</td>
+          <td>₹${row.totalPrice.toLocaleString('en-IN')}</td>
+          <td><span class="badge badge-${row.orderStatus}">${row.orderStatus}</span></td>
+        </tr>
+      `;
+    }
+  });
+
+  if (data.length > 10) {
+    html += `<tr><td colspan="${headers.length}" style="text-align:center; color:var(--text-tertiary);">...and ${data.length - 10} more rows</td></tr>`;
+  }
+
+  html += '</tbody></table>';
+  tableEl.innerHTML = html;
+  container.style.display = 'block';
+}
+
+async function confirmImport() {
+  if (!pendingImportData || pendingImportData.length === 0) return;
+
+  try {
+    const count = await bulkAdd(pendingImportType, pendingImportData);
+    showToast(`Successfully imported ${count} records into Firebase Cloud!`, 'success');
+    document.getElementById('import-preview').style.display = 'none';
+    pendingImportData = null;
+    pendingImportType = '';
+  } catch (err) {
+    showToast('Import failed: ' + err.message, 'error');
+  }
 }
 
 async function exportProjectCSV() {
@@ -423,7 +440,7 @@ async function exportMaterialCSV() {
     'NET PROFIT': o.netProfit,
     'CONTACT NO': o.contactNo,
     'ORDER STATUS': o.orderStatus,
-    'TRACKING/NOTES': o.trackingNotes,
+    'TRACKING/NOTES': o.notes,
   }));
 
   const csv = toCSV(exportData);
@@ -435,5 +452,5 @@ async function exportFullBackup() {
   const data = await exportAllData();
   const json = JSON.stringify(data, null, 2);
   downloadFile(json, `project-mafia-backup-${new Date().toISOString().split('T')[0]}.json`, 'application/json');
-  showToast('Full backup downloaded');
+  showToast('Full cloud backup downloaded');
 }

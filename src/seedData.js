@@ -1,7 +1,5 @@
 /**
- * Real Seed Data matching the user's Google Sheets / Excel records
- * 33 Project Orders & 40 Material Orders & Procurement Tracker
- * Cleaned customer names with Relational ID Linking (No arbitrary number/letter suffixes)
+ * Real Seed Data matching verified 37 Project Orders and 40 Material Orders
  */
 
 export const seedProjectOrders = [
@@ -18,7 +16,10 @@ export const seedProjectOrders = [
     "profit": 530,
     "phone": "8219318312",
     "status": "delivered",
-    "materialOrderId": 2
+    "materialOrderId": 2,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 1
   },
   {
     "name": "Sehajpreet Singh",
@@ -33,7 +34,10 @@ export const seedProjectOrders = [
     "profit": 554.33,
     "phone": "9888284126",
     "status": "delivered",
-    "materialOrderId": 4
+    "materialOrderId": 4,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 2
   },
   {
     "name": "Sameer Kaliramna",
@@ -48,7 +52,10 @@ export const seedProjectOrders = [
     "profit": 886.67,
     "phone": "8295453970",
     "status": "delivered",
-    "materialOrderId": 5
+    "materialOrderId": 5,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 3
   },
   {
     "name": "Robin Grover",
@@ -63,7 +70,10 @@ export const seedProjectOrders = [
     "profit": 589.88,
     "phone": "9812572752",
     "status": "delivered",
-    "materialOrderId": 13
+    "materialOrderId": 13,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 4
   },
   {
     "name": "Karuya Rajput",
@@ -78,7 +88,10 @@ export const seedProjectOrders = [
     "profit": 659.88,
     "phone": "8580531034",
     "status": "delivered",
-    "materialOrderId": 17
+    "materialOrderId": 17,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 5
   },
   {
     "name": "Ishant Bhardwaj",
@@ -93,7 +106,10 @@ export const seedProjectOrders = [
     "profit": 586.67,
     "phone": "8684858500",
     "status": "delivered",
-    "materialOrderId": 23
+    "materialOrderId": 23,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 6
   },
   {
     "name": "AIZEN",
@@ -107,7 +123,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 950,
     "phone": "7710788959",
-    "status": "delivered"
+    "status": "delivered",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 7
   },
   {
     "name": "Krish Choudhary",
@@ -121,7 +140,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 750,
     "phone": "96027 75592",
-    "status": "delivered"
+    "status": "delivered",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 8
   },
   {
     "name": "7033306311",
@@ -136,7 +158,10 @@ export const seedProjectOrders = [
     "profit": 544.5,
     "phone": "7033306311",
     "status": "delivered",
-    "materialOrderId": 25
+    "materialOrderId": 25,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 9
   },
   {
     "name": "Utkarsh",
@@ -150,7 +175,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 630,
     "phone": "9352575849",
-    "status": "delivered"
+    "status": "delivered",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 10
   },
   {
     "name": "Utkarsh",
@@ -164,22 +192,29 @@ export const seedProjectOrders = [
     "miscExpenses": 50,
     "profit": 350,
     "phone": "9352575849",
-    "status": "delivered"
+    "status": "delivered",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 11
   },
   {
+    "materialOrderId": 27,
     "name": "Hitesh Kataria",
     "projectName": "Fingerprint Attendance System",
     "payment": 1900,
-    "received": 900,
-    "pending": 1000,
+    "received": 1900,
     "orderDate": "2026-10-14",
     "dueDate": "2026-10-21",
-    "materialCost": 1622.14,
+    "materialCost": 1615,
     "miscExpenses": 50,
-    "profit": 227.86,
     "phone": "7009725127",
-    "status": "completed",
-    "materialOrderId": 27
+    "status": "delivered",
+    "pending": 0,
+    "profit": 235,
+    "id": 12,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:58:37.834Z",
+    "materialItem": "• AS608 Fingerprint Reader (1)• ESP32 30-Pin Module (1)• 10mm Goli Buzzer (1)• 16×2 I2C Green (1)"
   },
   {
     "name": "Nipurn Dixit",
@@ -194,7 +229,10 @@ export const seedProjectOrders = [
     "profit": 572.86,
     "phone": "7007995405",
     "status": "delivered",
-    "materialOrderId": 28
+    "materialOrderId": 28,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 13
   },
   {
     "name": "Arpit Srivastava",
@@ -209,22 +247,29 @@ export const seedProjectOrders = [
     "profit": 1072.86,
     "phone": "9336357818",
     "status": "completed",
-    "materialOrderId": 29
+    "materialOrderId": 29,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 14
   },
   {
+    "materialOrderId": 30,
     "name": "Yuvraj Singh",
     "projectName": "Smart Water Management System",
     "payment": 1250,
     "received": 625,
-    "pending": 625,
     "orderDate": "2026-10-17",
     "dueDate": "2026-10-20",
-    "materialCost": 867.14,
+    "materialCost": 860,
     "miscExpenses": 90,
-    "profit": 292.86,
     "phone": "7484015588",
-    "status": "in-assembly",
-    "materialOrderId": 30
+    "status": "completed",
+    "pending": 625,
+    "profit": 300,
+    "id": 15,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T20:48:13.712Z",
+    "materialItem": "• Arduino Uno SMD Board (1)\n• 400 Tie Point Breadboard (1)\n• 16×2 I2C Green (1)\n• 18650 2 Cell Battery Holder (1)\n• 18650 3.7V 2200mAh Li-ion Cell (2)\n• Water Pump 5-9V DC (Single) (1)\n• 1-Channel 5V Relay Module (1)\n• HC-SR04 Ultrasonic (1)\n• 8mm Plastic Pipe (per meter) (1)"
   },
   {
     "name": "Angel",
@@ -239,7 +284,10 @@ export const seedProjectOrders = [
     "profit": 724.86,
     "phone": "8950948224",
     "status": "completed",
-    "materialOrderId": 31
+    "materialOrderId": 31,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 16
   },
   {
     "name": "78589 97375",
@@ -253,7 +301,10 @@ export const seedProjectOrders = [
     "miscExpenses": 140,
     "profit": 1160,
     "phone": "7858997375",
-    "status": "completed"
+    "status": "completed",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 17
   },
   {
     "name": "78589 97375",
@@ -268,7 +319,10 @@ export const seedProjectOrders = [
     "profit": 727.86,
     "phone": "7858997375",
     "status": "in-assembly",
-    "materialOrderId": 32
+    "materialOrderId": 32,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 18
   },
   {
     "name": "Krish Choudhary",
@@ -283,7 +337,10 @@ export const seedProjectOrders = [
     "profit": 1097.86,
     "phone": "9602775592",
     "status": "in-assembly",
-    "materialOrderId": 33
+    "materialOrderId": 33,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 19
   },
   {
     "name": "Dev Awasthi",
@@ -298,22 +355,29 @@ export const seedProjectOrders = [
     "profit": 492.86,
     "phone": "8130270270",
     "status": "in-assembly",
-    "materialOrderId": 34
+    "materialOrderId": 34,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 20
   },
   {
+    "materialOrderId": 35,
     "name": "Himanshu",
     "projectName": "Transistor based light control system",
     "payment": 800,
-    "received": 400,
-    "pending": 400,
+    "received": 800,
     "orderDate": "2026-10-19",
     "dueDate": "2026-10-24",
-    "materialCost": 87.14,
+    "materialCost": 80,
     "miscExpenses": 60,
-    "profit": 652.86,
     "phone": "7889259901",
-    "status": "completed",
-    "materialOrderId": 35
+    "status": "delivered",
+    "pending": 0,
+    "profit": 660,
+    "id": 21,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T20:54:20.513Z",
+    "materialItem": "Transistor based light control system"
   },
   {
     "name": "Aryaman",
@@ -328,22 +392,29 @@ export const seedProjectOrders = [
     "profit": 642.86,
     "phone": "8219584253",
     "status": "completed",
-    "materialOrderId": 36
+    "materialOrderId": 36,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 22
   },
   {
+    "materialOrderId": 37,
     "name": "Aryaman",
     "projectName": "Water Management",
     "payment": 1200,
     "received": 600,
-    "pending": 600,
     "orderDate": "2026-10-19",
     "dueDate": "2026-10-23",
-    "materialCost": 867.14,
+    "materialCost": 860,
     "miscExpenses": 90,
-    "profit": 242.86,
     "phone": "8219584253",
-    "status": "in-assembly",
-    "materialOrderId": 37
+    "status": "completed",
+    "pending": 600,
+    "profit": 250,
+    "id": 23,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T20:48:04.707Z",
+    "materialItem": "Water Management"
   },
   {
     "name": "Prasoon Tiwari",
@@ -358,22 +429,29 @@ export const seedProjectOrders = [
     "profit": 592.86,
     "phone": "9630542208",
     "status": "waiting",
-    "materialOrderId": 38
+    "materialOrderId": 38,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 24
   },
   {
+    "materialOrderId": 39,
     "name": "Aryan",
     "projectName": "Hall Effect Parking",
     "payment": 1650,
-    "received": 825,
-    "pending": 825,
+    "received": 1650,
     "orderDate": "2026-10-19",
     "dueDate": "2026-10-24",
-    "materialCost": 612.14,
+    "materialCost": 605,
     "miscExpenses": 90,
-    "profit": 947.86,
     "phone": "8252748904",
-    "status": "completed",
-    "materialOrderId": 39
+    "status": "delivered",
+    "pending": 0,
+    "profit": 955,
+    "id": 25,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T20:54:47.277Z",
+    "materialItem": "Hall Effect Parking"
   },
   {
     "name": "Harkanwar Singh",
@@ -387,7 +465,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 850,
     "phone": "7973591489",
-    "status": "waiting"
+    "status": "waiting",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 26
   },
   {
     "name": "74949 99350",
@@ -401,7 +482,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 1050,
     "phone": "74949 99350",
-    "status": "waiting"
+    "status": "waiting",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 27
   },
   {
     "name": "Tarun",
@@ -415,7 +499,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 1700,
     "phone": "9984784056",
-    "status": "waiting"
+    "status": "waiting",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 28
   },
   {
     "name": "Titus",
@@ -429,7 +516,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 1800,
     "phone": "",
-    "status": "waiting"
+    "status": "waiting",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 29
   },
   {
     "name": "Prasoon Tiwari",
@@ -443,21 +533,27 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 800,
     "phone": "9630542208",
-    "status": "waiting"
+    "status": "waiting",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 30
   },
   {
     "name": "Ishant",
     "projectName": "temp control fan",
     "payment": 300,
     "received": 150,
-    "pending": 150,
     "orderDate": "2026-10-21",
     "dueDate": "2026-10-24",
     "materialCost": 0,
     "miscExpenses": 0,
-    "profit": 300,
     "phone": "8684858500",
-    "status": "waiting"
+    "status": "in-assembly",
+    "pending": 150,
+    "profit": 300,
+    "id": 31,
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:46:30.109Z"
   },
   {
     "name": "Vansh",
@@ -471,7 +567,10 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 1200,
     "phone": "9317129317",
-    "status": "waiting"
+    "status": "waiting",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 32
   },
   {
     "name": "Rohanpreet Singh",
@@ -485,7 +584,78 @@ export const seedProjectOrders = [
     "miscExpenses": 0,
     "profit": 1450,
     "phone": "8264463664",
-    "status": "waiting"
+    "status": "waiting",
+    "createdAt": "2026-10-21T16:41:53.513Z",
+    "updatedAt": "2026-10-21T16:41:53.513Z",
+    "id": 33
+  },
+  {
+    "name": "Sabnoor Bal",
+    "projectName": "Arduino LDR LED",
+    "payment": 850,
+    "received": 425,
+    "orderDate": "2026-10-21",
+    "dueDate": "2026-10-28",
+    "materialCost": 0,
+    "miscExpenses": 0,
+    "phone": "8570801484",
+    "status": "waiting",
+    "pending": 425,
+    "profit": 850,
+    "createdAt": "2026-10-21T16:44:29.125Z",
+    "updatedAt": "2026-10-21T16:44:29.125Z",
+    "id": 34
+  },
+  {
+    "name": "Pushpinder Singh",
+    "projectName": "Temp Fan",
+    "payment": 1000,
+    "received": 500,
+    "orderDate": "2026-10-21",
+    "dueDate": "2026-10-28",
+    "materialCost": 0,
+    "miscExpenses": 0,
+    "phone": "7087833285",
+    "status": "waiting",
+    "pending": 500,
+    "profit": 1000,
+    "id": 35,
+    "createdAt": "2026-10-21T17:01:46.577Z",
+    "updatedAt": "2026-10-21T17:04:01.625Z"
+  },
+  {
+    "name": "Sumit",
+    "projectName": "Arduino LDR LED",
+    "payment": 850,
+    "received": 500,
+    "orderDate": "2026-10-21",
+    "dueDate": "2026-10-29",
+    "materialCost": 0,
+    "miscExpenses": 0,
+    "phone": "8290902814",
+    "status": "waiting",
+    "pending": 350,
+    "profit": 850,
+    "createdAt": "2026-10-21T17:19:21.555Z",
+    "updatedAt": "2026-10-21T17:19:21.555Z",
+    "id": 36
+  },
+  {
+    "name": "Sabnoor Bal",
+    "projectName": "Smart Bin",
+    "payment": 1250,
+    "received": 625,
+    "orderDate": "2026-10-21",
+    "dueDate": "2026-10-28",
+    "materialCost": 0,
+    "miscExpenses": 0,
+    "phone": "8570801484",
+    "status": "waiting",
+    "pending": 625,
+    "profit": 1250,
+    "createdAt": "2026-10-21T20:47:36.851Z",
+    "updatedAt": "2026-10-21T20:47:36.851Z",
+    "id": 37
   }
 ];
 
@@ -509,7 +679,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "7007995405",
-    "notes": "Delivered to Nipurn Dixit"
+    "notes": "Delivered to Nipurn Dixit",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 1
   },
   {
     "customerName": "Dishant Kumar",
@@ -531,7 +704,10 @@ export const seedMaterialOrders = [
     "orderStatus": "delivered",
     "contactNo": "8219318312",
     "notes": "Project Order #1 (Dishant Kumar) - Sourced from Rajindra Electronics",
-    "linkedProjectId": 1
+    "linkedProjectId": 1,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 2
   },
   {
     "customerName": "Titus",
@@ -552,7 +728,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "8437702669",
-    "notes": "Handed over to Titus"
+    "notes": "Handed over to Titus",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 3
   },
   {
     "customerName": "Sehajpreet Singh",
@@ -574,7 +753,10 @@ export const seedMaterialOrders = [
     "orderStatus": "delivered",
     "contactNo": "9888284126",
     "notes": "Project Order #2 (Sehajpreet Singh) - Smart Dustbin",
-    "linkedProjectId": 2
+    "linkedProjectId": 2,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 4
   },
   {
     "customerName": "Sameer Kaliramna",
@@ -596,7 +778,10 @@ export const seedMaterialOrders = [
     "orderStatus": "delivered",
     "contactNo": "8295453970",
     "notes": "Project Order #3 (Sameer Kaliramna) - Photoelectric based detection system",
-    "linkedProjectId": 3
+    "linkedProjectId": 3,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 5
   },
   {
     "customerName": "Akhilesh",
@@ -617,7 +802,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "9528882665",
-    "notes": "Delivered to Akhilesh on 2026-09-26"
+    "notes": "Delivered to Akhilesh on 2026-09-26",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 6
   },
   {
     "customerName": "Hemant Choudhary",
@@ -638,7 +826,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "8003017762",
-    "notes": "Delivered to Hemant Choudhary on 2026-09-26"
+    "notes": "Delivered to Hemant Choudhary on 2026-09-26",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 7
   },
   {
     "customerName": "Akshun Goyal",
@@ -659,7 +850,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "8968650526",
-    "notes": "Invoice #EST-2026-002"
+    "notes": "Invoice #EST-2026-002",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 8
   },
   {
     "customerName": "RIDHANG",
@@ -680,7 +874,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "9201296061",
-    "notes": "DHT11 for RIDHANG"
+    "notes": "DHT11 for RIDHANG",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 9
   },
   {
     "customerName": "Ishant Bhardwaj",
@@ -701,7 +898,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "8684858500",
-    "notes": "Invoice #EST-2026-003"
+    "notes": "Invoice #EST-2026-003",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 10
   },
   {
     "customerName": "Aman Ikbal",
@@ -722,7 +922,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "9474309190",
-    "notes": "Heavy Discounted Order"
+    "notes": "Heavy Discounted Order",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 11
   },
   {
     "customerName": "Anurag Rana",
@@ -743,7 +946,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "7404259172",
-    "notes": "Cash"
+    "notes": "Cash",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 12
   },
   {
     "customerName": "Robin Grover",
@@ -765,7 +971,10 @@ export const seedMaterialOrders = [
     "orderStatus": "delivered",
     "contactNo": "9812572752",
     "notes": "Project Order#4",
-    "linkedProjectId": 4
+    "linkedProjectId": 4,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 13
   },
   {
     "customerName": "Atulya Chauhan",
@@ -786,7 +995,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "7905823873",
-    "notes": "Speaker, Audio"
+    "notes": "Speaker, Audio",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 14
   },
   {
     "customerName": "Atulya Chauhan",
@@ -807,7 +1019,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "7905823873",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 15
   },
   {
     "customerName": "Nimble Dhankhar",
@@ -828,7 +1043,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "7986862910",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 16
   },
   {
     "customerName": "Karuya Rajput",
@@ -850,7 +1068,10 @@ export const seedMaterialOrders = [
     "orderStatus": "delivered",
     "contactNo": "8580531034",
     "notes": "",
-    "linkedProjectId": 5
+    "linkedProjectId": 5,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 17
   },
   {
     "customerName": "Atulya Chauhan",
@@ -871,7 +1092,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "7905823873",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 18
   },
   {
     "customerName": "Akshun Goyal",
@@ -892,7 +1116,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "8968650526",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 19
   },
   {
     "customerName": "Dishant Kumar",
@@ -913,7 +1140,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "8219318312",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 20
   },
   {
     "customerName": "Mr. Singh",
@@ -934,7 +1164,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "93340 67497",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 21
   },
   {
     "customerName": "Ayush",
@@ -955,7 +1188,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "93348 39615",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 22
   },
   {
     "customerName": "Ishant Bhardwaj",
@@ -977,7 +1213,10 @@ export const seedMaterialOrders = [
     "orderStatus": "delivered",
     "contactNo": "86848 58500",
     "notes": "",
-    "linkedProjectId": 6
+    "linkedProjectId": 6,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 23
   },
   {
     "customerName": "Aniket Thakur",
@@ -998,94 +1237,99 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Received",
     "orderStatus": "delivered",
     "contactNo": "78149 23002",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 24
   },
   {
     "customerName": "7033306311",
-    "orderType": "Project Order",
+    "orderType": "Component Order",
     "orderDate": "2026-10-10",
     "materialItem": "Servo (1), Ultrasonic Sensor (1), Arduino UNO (1) , AB cable",
-    "qty": 1,
-    "unitPrice": 0,
-    "totalPrice": 0,
-    "received": 0,
-    "balance": 0,
-    "wholesaler": "Rajindra Electronics",
-    "wholesaleTotal": 505,
-    "wholesaleRate": 505,
-    "batchId": "LOT-06",
-    "porterCharge": 100.5,
-    "netProfit": 0,
-    "wholesalerStatus": "Received",
-    "orderStatus": "completed",
+    "qty": "1",
+    "unitPrice": "",
+    "totalPrice": "",
+    "received": "",
+    "wholesaleTotal": "505",
+    "wholesaleDate": "",
+    "porterCharge": "100.5",
     "contactNo": "70333 06311",
-    "notes": "",
-    "linkedProjectId": 9
+    "orderStatus": "delivered",
+    "wholesaleStatus": "pending",
+    "trackingNotes": "",
+    "balance": 0,
+    "netProfit": -605.5,
+    "id": 25,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:49:09.859Z"
   },
   {
     "customerName": "Tushar Singh",
     "orderType": "Component Order",
     "orderDate": "2026-10-18",
-    "materialItem": "1\tIRF540N Power MOSFET (TO-220)\t1 pc\n2\tACS712 5A Current Sensor Module\t1 pc\n3\tLM358 Dual Operational Amplifier IC (DIP-8)\t1 pc\n4\t10kΩ Trimmer Potentiometer (RM065)\t1 pc\n5\t10kΩ Resistor, ¼W\t1 pc\n6\t1kΩ Resistor, ¼W\t2 pcs\n7\t220Ω Resistor, ¼W\t1 pc\n8\t10mm Red LED, 2-pin\t1 pc\n9\t10mm Green LED, 2-pin\t1 pc\n10\t830-point Solderless Breadboard\t1 pc\n11\tMale-to-Male Jumper Wires\t1 set\n12\tMale-to-Female Jumper Wires\t1 set\n13\tMB102 Breadboard Power Supply Module\t1 pc\n14\t12V, 2A DC Power Adapter\t1 pc",
-    "qty": 1,
-    "unitPrice": 805,
-    "totalPrice": 805,
-    "received": 450,
-    "balance": 355,
-    "wholesaler": "Rajindra Electronics",
-    "wholesaleTotal": 624,
-    "wholesaleRate": 624,
-    "batchId": "LOT-07",
-    "porterCharge": 7.14,
-    "netProfit": 173.86,
-    "wholesalerStatus": "Received",
-    "orderStatus": "ready-for-dispatch",
+    "materialItem": "1\tIRF540N Power MOSFET (TO-220)\t1 pc2\tACS712 5A Current Sensor Module\t1 pc3\tLM358 Dual Operational Amplifier IC (DIP-8)\t1 pc4\t10kΩ Trimmer Potentiometer (RM065)\t1 pc5\t10kΩ Resistor, ¼W\t1 pc6\t1kΩ Resistor, ¼W\t2 pcs7\t220Ω Resistor, ¼W\t1 pc8\t10mm Red LED, 2-pin\t1 pc9\t10mm Green LED, 2-pin\t1 pc10\t830-point Solderless Breadboard\t1 pc11\tMale-to-Male Jumper Wires\t1 set12\tMale-to-Female Jumper Wires\t1 set13\tMB102 Breadboard Power Supply Module\t1 pc14\t12V, 2A DC Power Adapter\t1 pc",
+    "qty": "1",
+    "unitPrice": "805",
+    "totalPrice": "805",
+    "received": "805",
+    "wholesaleTotal": "624",
+    "wholesaleDate": "",
+    "porterCharge": "7.14",
     "contactNo": "77659 17993",
-    "notes": ""
+    "orderStatus": "completed",
+    "wholesaleStatus": "received",
+    "trackingNotes": "",
+    "balance": 0,
+    "netProfit": 173.86,
+    "id": 26,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:49:45.092Z"
   },
   {
     "customerName": "Hitesh Kataria",
-    "orderType": "Project Order",
+    "orderType": "Original Order",
     "orderDate": "2026-10-14",
-    "materialItem": "• AS608 Fingerprint Reader (1)\n• ESP32 30-Pin Module (1)\n• 10mm Goli Buzzer (1)\n• 16×2 I2C Green (1)",
-    "qty": 1,
-    "unitPrice": 0,
-    "totalPrice": 0,
-    "received": 0,
-    "balance": 0,
-    "wholesaler": "Rajindra Electronics",
-    "wholesaleTotal": 1615,
-    "wholesaleRate": 1615,
-    "batchId": "LOT-07",
-    "porterCharge": 7.14,
-    "netProfit": 0,
-    "wholesalerStatus": "Pending",
-    "orderStatus": "pending",
+    "materialItem": "• AS608 Fingerprint Reader (1)• ESP32 30-Pin Module (1)• 10mm Goli Buzzer (1)• 16×2 I2C Green (1)",
+    "qty": "1",
+    "unitPrice": "",
+    "totalPrice": "",
+    "received": "",
+    "wholesaleTotal": "1615",
+    "wholesaleDate": "",
+    "porterCharge": "7.14",
     "contactNo": "",
-    "notes": "",
+    "orderStatus": "completed",
+    "wholesaleStatus": "completed",
+    "trackingNotes": "",
+    "balance": 0,
+    "netProfit": -1622.14,
+    "id": 27,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:58:37.846Z",
     "linkedProjectId": 12
   },
   {
     "customerName": "Nipurn Dixit",
-    "orderType": "Project Order",
+    "orderType": "Component Order",
     "orderDate": "2026-10-15",
-    "materialItem": "• Robot Smart Chassis 4 Wheels (1)\n• ESP32 30-Pin Module (1)\n• 400 Tie Point Breadboard (1)\n• MB102 830-Point Breadboard (1)\n• L298 Motor Driver Board (1)\n• 18650 2-Cell Battery Holder (1)\n• 18650 3.7V 2200mAh Li-ion Cell (2)",
-    "qty": 1,
-    "unitPrice": 0,
-    "totalPrice": 0,
-    "received": 0,
-    "balance": 0,
-    "wholesaler": "Rajindra Electronics",
-    "wholesaleTotal": 1300,
-    "wholesaleRate": 1300,
-    "batchId": "LOT-07",
-    "porterCharge": 7.14,
-    "netProfit": 0,
-    "wholesalerStatus": "Pending",
-    "orderStatus": "pending",
+    "materialItem": "• Robot Smart Chassis 4 Wheels (1)• ESP32 30-Pin Module (1)• 400 Tie Point Breadboard (1)• MB102 830-Point Breadboard (1)• L298 Motor Driver Board (1)• 18650 2-Cell Battery Holder (1)• 18650 3.7V 2200mAh Li-ion Cell (2)",
+    "qty": "1",
+    "unitPrice": "",
+    "totalPrice": "",
+    "received": "",
+    "wholesaleTotal": "1300",
+    "wholesaleDate": "",
+    "porterCharge": "7.14",
     "contactNo": "",
-    "notes": "",
-    "linkedProjectId": 13
+    "orderStatus": "completed",
+    "wholesaleStatus": "completed",
+    "trackingNotes": "",
+    "balance": 0,
+    "netProfit": -1307.14,
+    "id": 28,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:50:28.282Z"
   },
   {
     "customerName": "Arpit Srivastava",
@@ -1107,7 +1351,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 14
+    "linkedProjectId": 14,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 29
   },
   {
     "customerName": "Yuvraj Singh",
@@ -1129,7 +1376,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 15
+    "linkedProjectId": 15,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T20:48:13.718Z",
+    "id": 30
   },
   {
     "customerName": "Angel",
@@ -1151,7 +1401,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 16
+    "linkedProjectId": 16,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 31
   },
   {
     "customerName": "78589 97375",
@@ -1173,7 +1426,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 18
+    "linkedProjectId": 18,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 32
   },
   {
     "customerName": "Krish Choudhary",
@@ -1195,7 +1451,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 19
+    "linkedProjectId": 19,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 33
   },
   {
     "customerName": "Dev Awasthi",
@@ -1217,7 +1476,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 20
+    "linkedProjectId": 20,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 34
   },
   {
     "customerName": "Himanshu",
@@ -1239,7 +1501,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 21
+    "linkedProjectId": 21,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T20:54:20.517Z",
+    "id": 35
   },
   {
     "customerName": "Aryaman",
@@ -1261,7 +1526,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 22
+    "linkedProjectId": 22,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 36
   },
   {
     "customerName": "Aryaman",
@@ -1283,7 +1551,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 23
+    "linkedProjectId": 23,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T20:48:04.709Z",
+    "id": 37
   },
   {
     "customerName": "Prasoon Tiwari",
@@ -1305,7 +1576,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 24
+    "linkedProjectId": 24,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 38
   },
   {
     "customerName": "Aryan",
@@ -1327,7 +1601,10 @@ export const seedMaterialOrders = [
     "orderStatus": "pending",
     "contactNo": "",
     "notes": "",
-    "linkedProjectId": 25
+    "linkedProjectId": 25,
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T20:54:47.278Z",
+    "id": 39
   },
   {
     "customerName": "Tabish Imam",
@@ -1348,7 +1625,10 @@ export const seedMaterialOrders = [
     "wholesalerStatus": "Pending",
     "orderStatus": "pending",
     "contactNo": "9229657604",
-    "notes": ""
+    "notes": "",
+    "createdAt": "2026-10-21T16:41:53.564Z",
+    "updatedAt": "2026-10-21T16:41:53.564Z",
+    "id": 40
   }
 ];
 
@@ -1363,7 +1643,10 @@ export const seedPorterBatches = [
     "deliveryStatus": "Delivered",
     "allocationMode": "Single Payer / Custom",
     "totalWholesaleCost": 1785,
-    "notes": "LOT-01 Delivery - 3 Orders"
+    "notes": "LOT-01 Delivery - 3 Orders",
+    "createdAt": "2026-10-21T16:41:53.599Z",
+    "updatedAt": "2026-10-21T16:41:53.599Z",
+    "id": 1
   },
   {
     "lotId": "LOT-02",
@@ -1375,7 +1658,10 @@ export const seedPorterBatches = [
     "deliveryStatus": "Delivered",
     "allocationMode": "Equal Split",
     "totalWholesaleCost": 1625,
-    "notes": "Equal split across 3 orders (₹65.67 each)"
+    "notes": "Equal split across 3 orders (₹65.67 each)",
+    "createdAt": "2026-10-21T16:41:53.599Z",
+    "updatedAt": "2026-10-21T16:41:53.599Z",
+    "id": 2
   },
   {
     "lotId": "LOT-03",
@@ -1387,7 +1673,10 @@ export const seedPorterBatches = [
     "deliveryStatus": "Delivered",
     "allocationMode": "Equal Split",
     "totalWholesaleCost": 825,
-    "notes": "Equal split across 3 orders (₹33.33 each)"
+    "notes": "Equal split across 3 orders (₹33.33 each)",
+    "createdAt": "2026-10-21T16:41:53.599Z",
+    "updatedAt": "2026-10-21T16:41:53.599Z",
+    "id": 3
   },
   {
     "lotId": "LOT-04",
@@ -1399,7 +1688,10 @@ export const seedPorterBatches = [
     "deliveryStatus": "Delivered",
     "allocationMode": "Equal Split",
     "totalWholesaleCost": 6993,
-    "notes": "Equal split across 8 orders (₹25.13 each)"
+    "notes": "Equal split across 8 orders (₹25.13 each)",
+    "createdAt": "2026-10-21T16:41:53.599Z",
+    "updatedAt": "2026-10-21T16:41:53.599Z",
+    "id": 4
   },
   {
     "lotId": "LOT-05",
@@ -1411,7 +1703,10 @@ export const seedPorterBatches = [
     "deliveryStatus": "Delivered",
     "allocationMode": "Equal Split",
     "totalWholesaleCost": 4800,
-    "notes": "Equal split across 6 orders (₹38.33 each)"
+    "notes": "Equal split across 6 orders (₹38.33 each)",
+    "createdAt": "2026-10-21T16:41:53.599Z",
+    "updatedAt": "2026-10-21T16:41:53.599Z",
+    "id": 5
   },
   {
     "lotId": "LOT-06",
@@ -1423,7 +1718,10 @@ export const seedPorterBatches = [
     "deliveryStatus": "Delivered",
     "allocationMode": "Equal Split",
     "totalWholesaleCost": 3435,
-    "notes": "Equal split across 2 orders (₹100.50 each)"
+    "notes": "Equal split across 2 orders (₹100.50 each)",
+    "createdAt": "2026-10-21T16:41:53.599Z",
+    "updatedAt": "2026-10-21T16:41:53.599Z",
+    "id": 6
   },
   {
     "lotId": "LOT-07",
@@ -1435,6 +1733,9 @@ export const seedPorterBatches = [
     "deliveryStatus": "Delivered",
     "allocationMode": "Equal Split",
     "totalWholesaleCost": 9062,
-    "notes": "Equal split across 14 orders (₹7.14 each)"
+    "notes": "Equal split across 14 orders (₹7.14 each)",
+    "createdAt": "2026-10-21T16:41:53.599Z",
+    "updatedAt": "2026-10-21T16:41:53.599Z",
+    "id": 7
   }
 ];
