@@ -35,7 +35,9 @@ export const CLOUD_STORES = [
   'materialOrders',
   'porterBatches',
   'customers',
-  'invoices'
+  'invoices',
+  'projectTemplates',
+  'catalog'
 ];
 
 /**

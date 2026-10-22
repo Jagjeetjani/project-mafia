@@ -14,6 +14,8 @@ import {
   subscribeToStore,
   CLOUD_STORES
 } from './firebase.js';
+import catalogData from './data/catalog.json';
+import { defaultProjectRecipes } from './data/projectRecipes.js';
 
 // In-memory responsive cache for instant UI performance
 const memoryCache = new Map();
@@ -51,6 +53,19 @@ export async function initDB() {
       }
     })
   );
+
+  // Seed default catalog & project recipes if store is empty
+  const existingCatalog = memoryCache.get('catalog') || [];
+  if (existingCatalog.length === 0 && catalogData && catalogData.length > 0) {
+    cloudBulkSave('catalog', catalogData).catch(e => console.warn('Catalog cloud save:', e));
+    memoryCache.set('catalog', catalogData);
+  }
+
+  const existingTemplates = memoryCache.get('projectTemplates') || [];
+  if (existingTemplates.length === 0 && defaultProjectRecipes && defaultProjectRecipes.length > 0) {
+    cloudBulkSave('projectTemplates', defaultProjectRecipes).catch(e => console.warn('Templates cloud save:', e));
+    memoryCache.set('projectTemplates', defaultProjectRecipes);
+  }
 
   isInitialized = true;
   return true;
@@ -441,4 +456,288 @@ export async function resetMaterialOrdersToSeed(seedOrders) {
   await cloudBulkSave('materialOrders', items);
   memoryCache.set('materialOrders', items);
   return items.length;
+}
+
+// === Project Recipes & Bill of Materials (BOM) ===
+
+export async function getProjectTemplates() {
+  if (!isInitialized) await initDB();
+  const custom = await getAll('projectTemplates');
+  if (custom && custom.length > 0) return custom;
+  return defaultProjectRecipes;
+}
+
+export async function saveProjectTemplate(template) {
+  if (!isInitialized) await initDB();
+  const templates = await getAll('projectTemplates');
+  const existing = templates.find(t => 
+    t.name.toLowerCase().trim() === template.name.toLowerCase().trim() ||
+    t.id === template.id
+  );
+
+  if (existing) {
+    template.id = existing.id;
+    await update('projectTemplates', template);
+  } else {
+    template.id = template.id || `recipe-${Date.now()}`;
+    await add('projectTemplates', template);
+  }
+  return template;
+}
+
+export async function deleteProjectTemplate(templateId) {
+  return remove('projectTemplates', templateId);
+}
+
+// === Component Catalog ===
+
+export async function getCatalog() {
+  if (!isInitialized) await initDB();
+  const items = await getAll('catalog');
+  if (items && items.length > 0) return items;
+  return catalogData;
+}
+
+export async function searchCatalog(query = '', limit = 25) {
+  const catalog = await getCatalog();
+  if (!query) return catalog.slice(0, limit);
+  const q = query.toLowerCase().trim();
+  return catalog.filter(item =>
+    (item.name && item.name.toLowerCase().includes(q)) ||
+    (item.category && item.category.toLowerCase().includes(q)) ||
+    (item.pricing_notes && item.pricing_notes.toLowerCase().includes(q))
+  ).slice(0, limit);
+}
+
+// === Auto-create / Link Material Procurement Order from Project Order ===
+
+export async function autoCreateLinkedMaterialOrder(projectOrder, componentsList = []) {
+  if (!projectOrder) return null;
+  if (!isInitialized) await initDB();
+
+  let formattedItems = '';
+  if (Array.isArray(componentsList) && componentsList.length > 0) {
+    formattedItems = componentsList.map(c => `• ${c.name} (${c.qty || 1})`).join('\n');
+  } else if (projectOrder.materialItem) {
+    formattedItems = projectOrder.materialItem;
+  }
+
+  const allMaterials = await getAll('materialOrders');
+  let existingMaterial = null;
+
+  if (projectOrder.materialOrderId) {
+    existingMaterial = allMaterials.find(m => String(m.id) === String(projectOrder.materialOrderId));
+  }
+  if (!existingMaterial && projectOrder.id) {
+    existingMaterial = allMaterials.find(m => m.linkedProjectId === projectOrder.id);
+  }
+
+  const payment = parseFloat(projectOrder.payment) || 0;
+  const received = parseFloat(projectOrder.received) || 0;
+
+  if (existingMaterial) {
+    // Update existing linked material order under customer's name
+    existingMaterial.customerName = projectOrder.name;
+    existingMaterial.materialItem = formattedItems || existingMaterial.materialItem;
+    existingMaterial.totalPrice = payment;
+    existingMaterial.received = received;
+    existingMaterial.balance = payment - received;
+    existingMaterial.contactNo = projectOrder.phone || existingMaterial.contactNo || '';
+    existingMaterial.notes = `Project: ${projectOrder.projectName}`;
+    existingMaterial.linkedProjectId = projectOrder.id;
+    // Keep wholesale rate blank / unchanged until wholesaler bill arrives
+    await update('materialOrders', existingMaterial);
+    return existingMaterial;
+  } else {
+    // Create new linked material order under customer's name
+    const newMaterial = {
+      customerName: projectOrder.name,
+      orderType: 'Project Order',
+      orderDate: projectOrder.orderDate || new Date().toISOString().split('T')[0],
+      materialItem: formattedItems,
+      qty: 1,
+      unitPrice: payment,
+      totalPrice: payment,
+      received: received,
+      balance: payment - received,
+      wholesaler: 'Rajindra Electronics',
+      wholesaleTotal: 0, // Left blank / pending as requested
+      wholesaleRate: 0,
+      batchId: '',
+      porterCharge: 0,
+      netProfit: 0,
+      wholesalerStatus: 'Pending',
+      orderStatus: 'pending',
+      contactNo: projectOrder.phone || '',
+      notes: `Project: ${projectOrder.projectName}`,
+      linkedProjectId: projectOrder.id
+    };
+
+    const newId = await add('materialOrders', newMaterial);
+    newMaterial.id = newId;
+
+    // Link back to project order
+    projectOrder.materialOrderId = newId;
+    projectOrder.materialItem = formattedItems;
+    await update('projectOrders', projectOrder);
+
+    return newMaterial;
+  }
+}
+
+// === Consolidated Wholesaler Procurement Generator ===
+
+export async function getConsolidatedProcurement(filterMode = 'pending') {
+  if (!isInitialized) await initDB();
+
+  const [materialOrders, catalog] = await Promise.all([
+    getAll('materialOrders'),
+    getCatalog()
+  ]);
+
+  // Select which orders to consolidate
+  let ordersToProcess = [];
+  if (filterMode === 'pending') {
+    // All orders that are un-batched or still pending wholesaler procurement
+    ordersToProcess = materialOrders.filter(m =>
+      !m.batchId ||
+      !m.lotId ||
+      m.orderStatus === 'pending' ||
+      m.orderStatus === 'waiting' ||
+      m.wholesalerStatus?.toLowerCase() === 'pending' ||
+      m.wholesaleStatus?.toLowerCase() === 'pending'
+    );
+  } else if (filterMode.startsWith('LOT-')) {
+    ordersToProcess = materialOrders.filter(m => m.batchId === filterMode);
+  } else {
+    ordersToProcess = materialOrders;
+  }
+
+  // Component aggregator map: normalizedName -> { name, totalQty, orders: [...], catalogItem }
+  const componentMap = new Map();
+
+  function addComponent(rawName, qty, orderInfo) {
+    if (!rawName) return;
+    const cleanName = rawName.trim().replace(/^[-•*]\s*/, '').replace(/\s*\(\d+\)$/, '').trim();
+    if (!cleanName || cleanName.length < 2) return;
+
+    const key = cleanName.toLowerCase();
+    if (!componentMap.has(key)) {
+      // Find closest match in catalog
+      const matched = catalog.find(c =>
+        c.name.toLowerCase() === key ||
+        c.name.toLowerCase().includes(key) ||
+        key.includes(c.name.toLowerCase())
+      );
+
+      componentMap.set(key, {
+        name: matched ? matched.name : cleanName,
+        totalQty: 0,
+        orders: [],
+        wholesaleUnitCost: matched ? (matched.wholesale_unit_cost || 0) : 0,
+        category: matched ? matched.category : 'General'
+      });
+    }
+
+    const record = componentMap.get(key);
+    const parsedQty = parseInt(qty, 10) || 1;
+    record.totalQty += parsedQty;
+    record.orders.push({
+      customerName: orderInfo.customerName || 'Customer',
+      orderType: orderInfo.orderType || 'Order',
+      orderId: orderInfo.id,
+      batchId: orderInfo.batchId || '',
+      qty: parsedQty
+    });
+  }
+
+  // Parse components from materialItem strings
+  ordersToProcess.forEach(order => {
+    const text = order.materialItem || '';
+    if (!text.trim()) return;
+
+    // Splits lines by newline, bullet, or comma
+    const lines = text.split(/[\n•\r]+/).filter(l => l.trim().length > 0);
+    
+    lines.forEach(line => {
+      let qty = 1;
+      let name = line.trim();
+
+      const qtyMatch1 = line.match(/\((\d+)\)/); // (2)
+      const qtyMatch2 = line.match(/—\s*(\d+)/); // — 2
+      const qtyMatch3 = line.match(/[x×]\s*(\d+)/i); // x2 or ×2
+      const qtyMatch4 = line.match(/Qty:\s*(\d+)/i); // Qty: 2
+      const qtyMatch5 = line.match(/^(\d+)\s*[x×]\s+/i); // 2x Item
+
+      if (qtyMatch1) {
+        qty = parseInt(qtyMatch1[1], 10);
+        name = line.replace(/\(\d+\)/, '');
+      } else if (qtyMatch2) {
+        qty = parseInt(qtyMatch2[1], 10);
+        name = line.replace(/—\s*\d+/, '');
+      } else if (qtyMatch3) {
+        qty = parseInt(qtyMatch3[1], 10);
+        name = line.replace(/[x×]\s*\d+/i, '');
+      } else if (qtyMatch4) {
+        qty = parseInt(qtyMatch4[1], 10);
+        name = line.replace(/Qty:\s*\d+/i, '');
+      } else if (qtyMatch5) {
+        qty = parseInt(qtyMatch5[1], 10);
+        name = line.replace(/^\d+\s*[x×]\s+/i, '');
+      }
+
+      addComponent(name, qty, order);
+    });
+  });
+
+  const consolidatedList = Array.from(componentMap.values()).sort((a, b) => b.totalQty - a.totalQty);
+  const totalUnits = consolidatedList.reduce((sum, item) => sum + item.totalQty, 0);
+  const estWholesaleTotal = consolidatedList.reduce((sum, item) => sum + (item.totalQty * item.wholesaleUnitCost), 0);
+
+  return {
+    items: consolidatedList,
+    totalUniqueItems: consolidatedList.length,
+    totalUnits,
+    estimatedWholesaleTotal: parseFloat(estWholesaleTotal.toFixed(2)),
+    orderCount: ordersToProcess.length,
+    orders: ordersToProcess
+  };
+}
+
+export async function batchOrdersIntoLot(orderIds, lotId, porterCharge = 0, wholesaler = 'Rajindra Electronics') {
+  if (!orderIds || !orderIds.length || !lotId) return 0;
+  if (!isInitialized) await initDB();
+
+  for (const id of orderIds) {
+    const order = await getById('materialOrders', id);
+    if (order) {
+      order.batchId = lotId;
+      order.lotId = lotId;
+      order.wholesaleStatus = 'received';
+      order.wholesalerStatus = 'Received';
+      await update('materialOrders', order);
+    }
+  }
+
+  // Create or update the porter batch record
+  const existingBatches = await getAll('porterBatches');
+  const batch = existingBatches.find(b => b.lotId === lotId);
+  const now = new Date().toISOString().split('T')[0];
+
+  if (!batch) {
+    await add('porterBatches', {
+      lotId,
+      date: now,
+      wholesaler,
+      totalPorterCharge: parseFloat(porterCharge) || 0,
+      ordersCount: orderIds.length,
+      deliveryCostPerOrder: orderIds.length > 0 ? parseFloat((porterCharge / orderIds.length).toFixed(2)) : 0,
+      deliveryStatus: 'Pending',
+      allocationMode: 'Equal Split',
+      totalWholesaleCost: 0,
+      notes: `${lotId} - ${orderIds.length} Consolidated Orders`
+    });
+  }
+
+  return orderIds.length;
 }

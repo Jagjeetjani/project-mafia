@@ -2390,3 +2390,231 @@ a {
   box-shadow: var(--shadow-md);
 }
 
+/* === Project Bill of Materials (BOM) Editor === */
+.bom-container {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bom-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.bom-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  transition: var(--transition-fast);
+}
+
+.bom-item-row:hover {
+  border-color: var(--border-hover);
+}
+
+.bom-item-name {
+  flex: 1;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bom-item-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bom-qty-btn {
+  width: 26px;
+  height: 26px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.bom-qty-btn:hover {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.bom-qty-val {
+  min-width: 24px;
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--accent-primary-light);
+}
+
+.bom-remove-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.bom-remove-btn:hover {
+  color: var(--text-danger);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.bom-add-box {
+  position: relative;
+  display: flex;
+  gap: 8px;
+}
+
+.bom-add-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  outline: none;
+}
+
+.bom-add-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.bom-catalog-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: var(--shadow-lg);
+}
+
+.bom-catalog-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-secondary);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  transition: var(--transition-fast);
+}
+
+.bom-catalog-item:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent-primary-light);
+}
+
+/* === Procurement Consolidator Modal === */
+.procurement-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-full);
+  color: var(--accent-primary-light);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.procurement-qty-badge {
+  background: var(--accent-primary-glow);
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary-light);
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  min-width: 38px;
+  text-align: center;
+}
+
+.order-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 2px;
+}
+
+.order-source-chip strong {
+  color: var(--accent-primary-light);
+}
+
+.procurement-batch-box {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fadeIn 200ms ease;
+}
+
+.procurement-table-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-procurement-sheet, #printable-procurement-sheet * {
+    visibility: visible;
+  }
+  #printable-procurement-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: #000 !important;
+    background: #fff !important;
+  }
+}
+
+

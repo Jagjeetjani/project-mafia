@@ -1,7 +1,10 @@
 /**
  * Material Orders Page — CRUD for material/component orders
  */
-import { getMaterialOrders, add, update, remove, getMaterialStats, getAll, resetMaterialOrdersToSeed } from '../db.js';
+import {
+  getMaterialOrders, add, update, remove, getMaterialStats, getAll,
+  resetMaterialOrdersToSeed, getConsolidatedProcurement, batchOrdersIntoLot, searchCatalog
+} from '../db.js';
 import { seedMaterialOrders } from '../seedData.js';
 import {
   formatCurrency, formatDate, normalizeStatus, getStatusLabel,
@@ -23,6 +26,10 @@ export function renderMaterialOrders() {
         <p class="page-subtitle">Track material procurement, wholesale orders, and component sales</p>
       </div>
       <div class="page-header-actions">
+        <button class="btn-secondary" id="btn-consolidate-sourcing">
+          <span class="material-icons-round">inventory_2</span>
+          <span>Wholesaler Order List</span>
+        </button>
         <button class="btn-primary" id="btn-add-material">
           <span class="material-icons-round">add</span>
           <span>New Material Order</span>
@@ -294,6 +301,11 @@ function bindMaterialEvents() {
     loadMaterialOrders();
   });
 
+  // Wholesaler Order List (Consolidated Procurement)
+  document.getElementById('btn-consolidate-sourcing')?.addEventListener('click', () => {
+    openConsolidatedProcurementModal();
+  });
+
   // Add button
   document.getElementById('btn-add-material')?.addEventListener('click', () => {
     openMaterialModal();
@@ -324,6 +336,333 @@ function bindMaterialEvents() {
   });
 }
 
+/**
+ * Consolidated Wholesaler Procurement Modal
+ * 1-Click WhatsApp list, Batching into LOT, and Sourcing Sheet
+ */
+export async function openConsolidatedProcurementModal() {
+  const overlay = document.getElementById('modal-overlay');
+  const container = document.getElementById('modal-container');
+  if (!overlay || !container) return;
+
+  let currentFilter = 'pending';
+  let procurement = await getConsolidatedProcurement(currentFilter);
+  const existingBatches = await getAll('porterBatches');
+
+  // Next lot ID calculation (e.g. LOT-12)
+  let nextLotNum = 1;
+  existingBatches.forEach(b => {
+    const m = (b.lotId || '').match(/LOT-(\d+)/i);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      if (num >= nextLotNum) nextLotNum = num + 1;
+    }
+  });
+  const defaultLotName = `LOT-${String(nextLotNum).padStart(2, '0')}`;
+
+  function renderView() {
+    container.innerHTML = `
+      <div class="modal-header">
+        <div>
+          <h2 style="display:flex; align-items:center; gap:8px;">
+            <span class="material-icons-round" style="color:var(--accent-purple); font-size:26px;">inventory_2</span>
+            <span>Wholesaler Order List</span>
+          </h2>
+          <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:2px;">
+            Consolidated procurement sheet across pending customer project and component orders
+          </p>
+        </div>
+        <button class="modal-close" id="modal-close">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
+        <!-- METRICS ROW -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:12px;">
+          <div style="background:var(--bg-tertiary); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-primary); text-align:center;">
+            <div style="font-size:0.75rem; color:var(--text-tertiary); font-weight:600; text-transform:uppercase;">Unique Parts</div>
+            <div style="font-size:1.3rem; font-weight:800; color:var(--accent-primary-light); margin-top:4px;">${procurement.totalUniqueItems}</div>
+          </div>
+          <div style="background:var(--bg-tertiary); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-primary); text-align:center;">
+            <div style="font-size:0.75rem; color:var(--text-tertiary); font-weight:600; text-transform:uppercase;">Total Units</div>
+            <div style="font-size:1.3rem; font-weight:800; color:var(--accent-purple); margin-top:4px;">${procurement.totalUnits} pcs</div>
+          </div>
+          <div style="background:var(--bg-tertiary); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-primary); text-align:center;">
+            <div style="font-size:0.75rem; color:var(--text-tertiary); font-weight:600; text-transform:uppercase;">Customer Orders</div>
+            <div style="font-size:1.3rem; font-weight:800; color:var(--accent-blue); margin-top:4px;">${procurement.orderCount}</div>
+          </div>
+          <div style="background:var(--bg-tertiary); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-primary); text-align:center;">
+            <div style="font-size:0.75rem; color:var(--text-tertiary); font-weight:600; text-transform:uppercase;">Est. Wholesale</div>
+            <div style="font-size:1.3rem; font-weight:800; color:var(--text-success); margin-top:4px;">${formatCurrency(procurement.estimatedWholesaleTotal)}</div>
+          </div>
+        </div>
+
+        <!-- ACTION TOOLBAR -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; background:var(--bg-card); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-secondary);">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.8rem; color:var(--text-secondary); font-weight:600;">Scope:</label>
+            <select id="procure-filter-select" class="form-select" style="min-width:200px; padding:6px 10px; font-size:0.85rem;">
+              <option value="pending" ${currentFilter === 'pending' ? 'selected' : ''}>⏳ Pending Orders (Unbatched)</option>
+              <option value="all" ${currentFilter === 'all' ? 'selected' : ''}>🌐 All Active Orders</option>
+            </select>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button class="btn-primary" id="btn-copy-procure-whatsapp" style="background:#25D366; border-color:#25D366; color:white;">
+              <span class="material-icons-round" style="font-size:18px;">chat</span>
+              <span>Copy WhatsApp List</span>
+            </button>
+            <button class="btn-secondary" id="btn-toggle-batch-box">
+              <span class="material-icons-round" style="font-size:18px;">local_shipping</span>
+              <span>1-Click Porter Batch</span>
+            </button>
+            <button class="btn-secondary" id="btn-print-procure-sheet">
+              <span class="material-icons-round" style="font-size:18px;">print</span>
+              <span>Print Sheet</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- INLINE BATCH CREATOR FORM (TOGGLEABLE) -->
+        <div id="batch-creator-box" class="procurement-batch-box hidden">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong style="color:var(--text-primary); font-size:0.95rem; display:flex; align-items:center; gap:6px;">
+              <span class="material-icons-round" style="color:var(--accent-primary-light);">local_shipping</span>
+              Batch All ${procurement.orderCount} Orders into New Porter Lot
+            </strong>
+            <button type="button" class="btn-xs btn-secondary" id="btn-close-batch-box">✕ Close</button>
+          </div>
+          <div style="font-size:0.8rem; color:var(--text-secondary);">
+            Assign all currently pending material orders to this Porter Lot (${defaultLotName}), mark wholesale status as 'Received', and record delivery charges.
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+            <div>
+              <label class="form-label">Lot Identifier</label>
+              <input type="text" id="batch-lot-id" class="form-input" value="${defaultLotName}" placeholder="e.g. LOT-12" />
+            </div>
+            <div>
+              <label class="form-label">Porter Delivery Charge (₹)</label>
+              <input type="number" step="0.01" id="batch-porter-charge" class="form-input" value="250" placeholder="e.g. 250" />
+            </div>
+            <div>
+              <label class="form-label">Wholesaler Name</label>
+              <input type="text" id="batch-wholesaler-name" class="form-input" value="Rajindra Electronics" />
+            </div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+            <button class="btn-primary" id="btn-confirm-batch">
+              <span class="material-icons-round">check_circle</span>
+              <span>Confirm & Lock Batch</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CONSOLIDATED COMPONENTS TABLE -->
+        <div class="procurement-table-scroll">
+          <table class="data-table" style="font-size:0.85rem;">
+            <thead>
+              <tr>
+                <th style="width:40px;">#</th>
+                <th>Component / Item Name</th>
+                <th>Category</th>
+                <th style="text-align:center;">Qty Needed</th>
+                <th style="text-align:right;">Wholesale Rate</th>
+                <th style="text-align:right;">Est. Cost</th>
+                <th>Customer Orders Covered</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${procurement.items.length === 0 ? `
+                <tr>
+                  <td colspan="7" style="text-align:center; padding:32px; color:var(--text-tertiary);">
+                    No components found needing wholesaler procurement for this filter.
+                  </td>
+                </tr>
+              ` : procurement.items.map((item, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td style="font-weight:600; color:var(--text-primary);">${item.name}</td>
+                  <td><span class="status-badge" style="background:var(--bg-elevated); color:var(--text-secondary); font-size:0.7rem;">${item.category || 'General'}</span></td>
+                  <td style="text-align:center;"><span class="procurement-qty-badge">${item.totalQty}</span></td>
+                  <td style="text-align:right; color:var(--text-secondary);">${item.wholesaleUnitCost ? formatCurrency(item.wholesaleUnitCost) : '—'}</td>
+                  <td style="text-align:right; font-weight:600; color:var(--accent-purple);">${item.wholesaleUnitCost ? formatCurrency(item.wholesaleUnitCost * item.totalQty) : '—'}</td>
+                  <td>
+                    ${item.orders.map(o => `
+                      <span class="order-source-chip" title="Order #${o.orderId}">
+                        ${o.customerName} <strong>(${o.qty})</strong>
+                      </span>
+                    `).join('')}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- PRINTABLE HIDDEN SHEET -->
+        <div id="printable-procurement-sheet" style="display:none;">
+          <div style="padding:24px; font-family:sans-serif; color:#000; background:#fff;">
+            <div style="border-bottom:2px solid #000; padding-bottom:12px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <h1 style="margin:0; font-size:20px; font-weight:800;">PROJECT MAFIA — WHOLESALE PROCUREMENT LIST</h1>
+                <p style="margin:4px 0 0; font-size:12px; color:#555;">Supplier: Rajindra Electronics • Generated: ${new Date().toLocaleDateString('en-IN')}</p>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:14px; font-weight:bold;">${procurement.totalUniqueItems} Parts | ${procurement.totalUnits} Units</div>
+              </div>
+            </div>
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+              <thead>
+                <tr style="border-bottom:1px solid #000; text-align:left;">
+                  <th style="padding:6px;">#</th>
+                  <th style="padding:6px;">Component Description</th>
+                  <th style="padding:6px; text-align:center;">Qty</th>
+                  <th style="padding:6px; text-align:right;">Unit Rate</th>
+                  <th style="padding:6px;">For Orders</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${procurement.items.map((item, idx) => `
+                  <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:6px;">${idx + 1}</td>
+                    <td style="padding:6px; font-weight:bold;">${item.name}</td>
+                    <td style="padding:6px; text-align:center; font-weight:bold; font-size:13px;">${item.totalQty}</td>
+                    <td style="padding:6px; text-align:right;">${item.wholesaleUnitCost ? '₹' + item.wholesaleUnitCost : ''}</td>
+                    <td style="padding:6px; font-size:11px; color:#555;">${item.orders.map(o => `${o.customerName} (${o.qty})`).join(', ')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" id="modal-cancel">Close</button>
+      </div>
+    `;
+
+    overlay.classList.remove('hidden');
+
+    // Close handlers
+    document.getElementById('modal-close').onclick = () => overlay.classList.add('hidden');
+    document.getElementById('modal-cancel').onclick = () => overlay.classList.add('hidden');
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.classList.add('hidden'); };
+
+    // Filter change
+    document.getElementById('procure-filter-select')?.addEventListener('change', async (e) => {
+      currentFilter = e.target.value;
+      procurement = await getConsolidatedProcurement(currentFilter);
+      renderView();
+    });
+
+    // Copy WhatsApp list
+    document.getElementById('btn-copy-procure-whatsapp')?.addEventListener('click', async () => {
+      const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      let text = `📦 *WHOLESALER ORDER LIST — PROJECT MAFIA*\n`;
+      text += `📅 *Date:* ${dateStr}\n`;
+      text += `🏢 *Supplier:* Rajindra Electronics\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      procurement.items.forEach((item, index) => {
+        text += `${index + 1}. *${item.name}* — *${item.totalQty} pcs*\n`;
+      });
+
+      text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      text += `📊 *Total Items:* ${procurement.totalUniqueItems} components\n`;
+      text += `🔢 *Total Quantity:* ${procurement.totalUnits} pcs\n`;
+      text += `⚡ *Please confirm stock and dispatch via Porter.*\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('✓ WhatsApp Order List copied to clipboard!', 'success');
+        const btn = document.getElementById('btn-copy-procure-whatsapp');
+        if (btn) {
+          const originalHTML = btn.innerHTML;
+          btn.innerHTML = `<span class="material-icons-round" style="font-size:18px;">check</span><span>Copied!</span>`;
+          setTimeout(() => { btn.innerHTML = originalHTML; }, 2000);
+        }
+      } catch (err) {
+        showToast('Could not copy automatically. Please select text manually.', 'error');
+      }
+    });
+
+    // Toggle Batch creator box
+    const batchBox = document.getElementById('batch-creator-box');
+    document.getElementById('btn-toggle-batch-box')?.addEventListener('click', () => {
+      batchBox.classList.toggle('hidden');
+    });
+    document.getElementById('btn-close-batch-box')?.addEventListener('click', () => {
+      batchBox.classList.add('hidden');
+    });
+
+    // Confirm Batch button
+    document.getElementById('btn-confirm-batch')?.addEventListener('click', async () => {
+      const lotId = document.getElementById('batch-lot-id').value.trim();
+      const porterCharge = parseFloat(document.getElementById('batch-porter-charge').value) || 0;
+      const wholesaler = document.getElementById('batch-wholesaler-name').value.trim() || 'Rajindra Electronics';
+
+      if (!lotId) {
+        showToast('Please specify a Lot Identifier (e.g. LOT-12)', 'error');
+        return;
+      }
+
+      const orderIds = procurement.orders.map(o => o.id);
+      if (orderIds.length === 0) {
+        showToast('No orders to batch!', 'error');
+        return;
+      }
+
+      const confirmed = await showConfirm(
+        'Confirm Porter Batch',
+        `Assign ${orderIds.length} orders to lot "${lotId}" with ₹${porterCharge} Porter charge?`
+      );
+      if (!confirmed) return;
+
+      const batchedCount = await batchOrdersIntoLot(orderIds, lotId, porterCharge, wholesaler);
+      showToast(`Successfully batched ${batchedCount} orders into ${lotId}!`, 'success');
+
+      // Refresh procurement view and material orders page
+      procurement = await getConsolidatedProcurement(currentFilter);
+      renderView();
+      await loadMaterialOrders();
+      renderMaterialStats();
+    });
+
+    // Print button
+    document.getElementById('btn-print-procure-sheet')?.addEventListener('click', () => {
+      const printSheet = document.getElementById('printable-procurement-sheet');
+      if (!printSheet) return;
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Wholesaler Procurement Sheet - Project Mafia</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; color: #111; }
+              table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background: #f4f4f4; }
+              .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+            </style>
+          </head>
+          <body>
+            ${printSheet.innerHTML}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+    });
+  }
+
+  renderView();
+}
+
 export function openMaterialModal(order = null) {
   const isEdit = !!order;
   const overlay = document.getElementById('modal-overlay');
@@ -340,42 +679,45 @@ export function openMaterialModal(order = null) {
       <form id="material-form" class="form-grid">
         <div class="form-group">
           <label class="form-label">Customer Name *</label>
-          <input class="form-input" type="text" name="customerName" value="${order?.customerName || ''}" required />
+          <input class="form-input" type="text" name="customerName" value="${order?.customerName || ''}" required placeholder="Customer name" />
         </div>
         <div class="form-group">
           <label class="form-label">Order Type</label>
           <select class="form-select" name="orderType">
             <option value="Component Order" ${order?.orderType === 'Component Order' ? 'selected' : ''}>Component Order</option>
+            <option value="Project Order" ${order?.orderType === 'Project Order' ? 'selected' : ''}>Project Order</option>
             <option value="Original Order" ${order?.orderType === 'Original Order' ? 'selected' : ''}>Original Order</option>
           </select>
         </div>
         <div class="form-group">
           <label class="form-label">Order Date</label>
-          <input class="form-input" type="date" name="orderDate" value="${formatDateForInput(order?.orderDate)}" />
+          <input class="form-input" type="date" name="orderDate" value="${formatDateForInput(order?.orderDate) || new Date().toISOString().split('T')[0]}" />
         </div>
-        <div class="form-group full-width">
-          <label class="form-label">Material / Item *</label>
-          <input class="form-input" type="text" name="materialItem" value="${order?.materialItem || ''}" required />
+        <div class="form-group full-width" style="position:relative;">
+          <label class="form-label">Material / Item * (Search Catalog)</label>
+          <input class="form-input" type="text" name="materialItem" id="material-item-input" value="${order?.materialItem || ''}" required placeholder="Type component name (518 catalog items autocomplete)..." autocomplete="off" />
+          <div id="material-catalog-dropdown" class="bom-catalog-dropdown hidden"></div>
         </div>
         <div class="form-group">
           <label class="form-label">Quantity</label>
-          <input class="form-input" type="number" name="qty" value="${order?.qty || ''}" />
+          <input class="form-input" type="number" name="qty" value="${order?.qty || 1}" />
         </div>
         <div class="form-group">
-          <label class="form-label">Unit Price (₹)</label>
-          <input class="form-input" type="number" step="0.01" name="unitPrice" value="${order?.unitPrice || ''}" />
+          <label class="form-label">Customer Unit Rate (₹)</label>
+          <input class="form-input" type="number" step="0.01" name="unitPrice" value="${order?.unitPrice || ''}" placeholder="Rate customer pays" />
         </div>
         <div class="form-group">
           <label class="form-label">Total Price (₹)</label>
-          <input class="form-input" type="number" step="0.01" name="totalPrice" value="${order?.totalPrice || ''}" />
+          <input class="form-input" type="number" step="0.01" name="totalPrice" value="${order?.totalPrice || ''}" placeholder="Total customer payment" />
         </div>
         <div class="form-group">
           <label class="form-label">Amount Received (₹)</label>
-          <input class="form-input" type="number" step="0.01" name="received" value="${order?.received || ''}" />
+          <input class="form-input" type="number" step="0.01" name="received" value="${order?.received || ''}" placeholder="Advance or full payment" />
         </div>
         <div class="form-group">
-          <label class="form-label">Wholesale Total (₹)</label>
-          <input class="form-input" type="number" step="0.01" name="wholesaleTotal" value="${order?.wholesaleTotal || ''}" />
+          <label class="form-label">Wholesale Cost (₹)</label>
+          <input class="form-input" type="number" step="0.01" name="wholesaleTotal" value="${order?.wholesaleTotal || 0}" placeholder="Wholesale rate (optional)" />
+          <div style="font-size:0.7rem; color:var(--text-tertiary); margin-top:2px;">Leave 0 until wholesaler bill arrives</div>
         </div>
         <div class="form-group">
           <label class="form-label">Wholesale Date</label>
@@ -383,11 +725,11 @@ export function openMaterialModal(order = null) {
         </div>
         <div class="form-group">
           <label class="form-label">Porter Charge (₹)</label>
-          <input class="form-input" type="number" step="0.01" name="porterCharge" value="${order?.porterCharge || ''}" />
+          <input class="form-input" type="number" step="0.01" name="porterCharge" value="${order?.porterCharge || 0}" />
         </div>
         <div class="form-group">
           <label class="form-label">Contact Number</label>
-          <input class="form-input" type="text" name="contactNo" value="${order?.contactNo || ''}" />
+          <input class="form-input" type="text" name="contactNo" value="${order?.contactNo || ''}" placeholder="10-digit phone" />
         </div>
         <div class="form-group">
           <label class="form-label">Order Status</label>
@@ -402,14 +744,14 @@ export function openMaterialModal(order = null) {
         <div class="form-group">
           <label class="form-label">Wholesale Status</label>
           <select class="form-select" name="wholesaleStatus">
-            <option value="pending" ${order?.wholesaleStatus === 'pending' ? 'selected' : ''}>Pending</option>
-            <option value="received" ${order?.wholesaleStatus === 'received' ? 'selected' : ''}>Received</option>
+            <option value="pending" ${order?.wholesaleStatus === 'pending' || !order ? 'selected' : ''}>Pending Procurement</option>
+            <option value="received" ${order?.wholesaleStatus === 'received' ? 'selected' : ''}>Received from Wholesaler</option>
             <option value="completed" ${order?.wholesaleStatus === 'completed' ? 'selected' : ''}>Completed</option>
           </select>
         </div>
         <div class="form-group full-width">
           <label class="form-label">Tracking / Notes</label>
-          <textarea class="form-textarea" name="trackingNotes">${order?.trackingNotes || ''}</textarea>
+          <textarea class="form-textarea" name="trackingNotes">${order?.trackingNotes || order?.notes || ''}</textarea>
         </div>
       </form>
     </div>
@@ -429,6 +771,8 @@ export function openMaterialModal(order = null) {
   const qtyInput = form.querySelector('[name="qty"]');
   const unitPriceInput = form.querySelector('[name="unitPrice"]');
   const totalPriceInput = form.querySelector('[name="totalPrice"]');
+  const itemInput = document.getElementById('material-item-input');
+  const catalogDropdown = document.getElementById('material-catalog-dropdown');
 
   const calcTotal = () => {
     const qty = parseFloat(qtyInput.value) || 0;
@@ -440,6 +784,53 @@ export function openMaterialModal(order = null) {
 
   qtyInput.addEventListener('input', calcTotal);
   unitPriceInput.addEventListener('input', calcTotal);
+
+  // Catalog live search autocomplete
+  if (itemInput && catalogDropdown) {
+    itemInput.addEventListener('input', async () => {
+      const q = itemInput.value.trim();
+      if (q.length < 2) {
+        catalogDropdown.classList.add('hidden');
+        return;
+      }
+
+      const matches = await searchCatalog(q, 10);
+      if (matches.length === 0) {
+        catalogDropdown.classList.add('hidden');
+        return;
+      }
+
+      catalogDropdown.innerHTML = matches.map(m => `
+        <div class="bom-catalog-item" data-name="${m.name}" data-cost="${m.wholesale_unit_cost || 0}">
+          <div>
+            <strong style="color:var(--text-primary); display:block;">${m.name}</strong>
+            <span style="font-size:0.75rem; color:var(--text-tertiary);">${m.category}</span>
+          </div>
+          <div style="font-size:0.8rem; font-weight:600; color:var(--accent-purple);">
+            ₹${(m.wholesale_unit_cost || 0).toFixed(2)}
+          </div>
+        </div>
+      `).join('');
+
+      catalogDropdown.classList.remove('hidden');
+    });
+
+    catalogDropdown.addEventListener('click', (e) => {
+      const row = e.target.closest('.bom-catalog-item');
+      if (!row) return;
+      const name = row.dataset.name;
+      if (name) {
+        itemInput.value = name;
+        catalogDropdown.classList.add('hidden');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.form-group.full-width')) {
+        catalogDropdown.classList.add('hidden');
+      }
+    });
+  }
 
   // Close handlers
   document.getElementById('modal-close').onclick = () => overlay.classList.add('hidden');
@@ -462,6 +853,12 @@ export function openMaterialModal(order = null) {
     const wholesaleTotal = parseFloat(data.wholesaleTotal) || 0;
     const porterCharge = parseFloat(data.porterCharge) || 0;
 
+    data.qty = parseFloat(data.qty) || 1;
+    data.unitPrice = parseFloat(data.unitPrice) || 0;
+    data.totalPrice = totalPrice;
+    data.received = received;
+    data.wholesaleTotal = wholesaleTotal;
+    data.porterCharge = porterCharge;
     data.balance = totalPrice - received;
     data.netProfit = received - wholesaleTotal - porterCharge;
 
@@ -469,6 +866,8 @@ export function openMaterialModal(order = null) {
       if (isEdit) {
         data.id = order.id;
         data.createdAt = order.createdAt;
+        data.batchId = order.batchId || '';
+        data.linkedProjectId = order.linkedProjectId || null;
         await update('materialOrders', data);
         showToast('Material order updated');
       } else {
