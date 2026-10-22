@@ -10,6 +10,41 @@ import {
   showToast, showConfirm, debounce
 } from '../utils.js';
 import { PAYMENT_QR_IMAGE } from '../assets/paymentQr.js';
+import { navigate } from '../main.js';
+
+/**
+ * Smart Component Parser — handles comma, newline, bullet separated lists
+ * and auto-matches against wholesale catalog
+ */
+export function parseComponentsFromText(text, catalog = []) {
+  if (!text) return [];
+  const rawParts = text.split(/[\n•\r,]+/).map(p => p.trim()).filter(p => p.length > 0);
+  const items = [];
+  rawParts.forEach(l => {
+    let qty = 1;
+    let name = l;
+    const m = l.match(/\((\d+)\)/) || l.match(/x\s*(\d+)/i) || l.match(/(\d+)\s*(?:pcs|units|nos)/i);
+    if (m) {
+      qty = parseInt(m[1], 10);
+      name = l.replace(m[0], '').trim();
+    }
+    name = name.replace(/^[-*•\s]+/, '').trim();
+    if (!name) return;
+
+    const lowerName = name.toLowerCase();
+    const matched = catalog.find(c => {
+      const cLow = (c.name || '').toLowerCase();
+      return cLow === lowerName || lowerName.includes(cLow) || cLow.includes(lowerName);
+    });
+    items.push({
+      name: matched ? matched.name : name,
+      quantity: qty,
+      wholesale_unit_cost: matched ? (matched.wholesale_unit_cost || 0) : 0,
+      unit_price_excl_tax: 0
+    });
+  });
+  return items;
+}
 
 let invoices = [];
 let currentFilter = {
@@ -200,6 +235,13 @@ function renderInvoiceTable() {
       <tr data-id="${inv.id}">
         <td class="cell-name font-mono" style="color:var(--accent-primary-light); font-weight:700;">
           ${meta.invoice_no}
+          ${(inv.mappedComponentOrderId || meta.component_order_id) ? `
+            <div style="margin-top:3px;">
+              <span class="status-badge badge-jump-material" data-order-id="${inv.mappedComponentOrderId || meta.component_order_id}" style="cursor:pointer; display:inline-flex; align-items:center; gap:2px; font-size:0.68rem; background:rgba(99,102,241,0.12); color:var(--accent-primary-light); border:1px solid rgba(99,102,241,0.25);" title="Click to view Component Order #${inv.mappedComponentOrderId || meta.component_order_id}">
+                <span class="material-icons-round" style="font-size:11px;">link</span> Order #${inv.mappedComponentOrderId || meta.component_order_id}
+              </span>
+            </div>
+          ` : ''}
         </td>
         <td class="cell-name">
           <div>${meta.customer_name}</div>
@@ -263,6 +305,14 @@ function bindInvoiceEvents() {
     const editBtn = e.target.closest('.edit-invoice');
     const deleteBtn = e.target.closest('.delete-invoice');
 
+    const matBadge = e.target.closest('.badge-jump-material');
+    if (matBadge) {
+      const orderId = parseInt(matBadge.dataset.orderId, 10);
+      await navigate('materials');
+      showToast(`Viewing Component Order #${orderId}`, 'info');
+      return;
+    }
+
     if (viewBtn) {
       const id = parseInt(viewBtn.dataset.id, 10);
       const invoice = invoices.find(i => i.id === id);
@@ -279,6 +329,18 @@ function bindInvoiceEvents() {
       const id = parseInt(deleteBtn.dataset.id, 10);
       const confirmed = await showConfirm('Delete Invoice', 'Are you sure you want to delete this invoice?');
       if (confirmed) {
+        const invToDelete = invoices.find(i => i.id === id);
+        const mappedId = invToDelete?.mappedComponentOrderId || invToDelete?.metadata?.component_order_id;
+        if (mappedId) {
+          const matOrder = (await getAll('materialOrders')).find(m => m.id === mappedId);
+          if (matOrder) {
+            await update('materialOrders', {
+              ...matOrder,
+              invoiceId: null,
+              invoiceNo: null
+            });
+          }
+        }
         await remove('invoices', id);
         showToast('Invoice deleted successfully', 'success');
         await loadInvoices();
@@ -324,7 +386,7 @@ function bindInvoiceEvents() {
 /**
  * Open the Comprehensive Invoice Studio Modal (Matching C:\INVOICE)
  */
-export async function openInvoiceStudioModal(existingInvoice = null) {
+export async function openInvoiceStudioModal(existingInvoice = null, preselectedOrder = null) {
   const overlay = document.getElementById('modal-overlay');
   const container = document.getElementById('modal-container');
   if (!overlay || !container) return;
@@ -338,10 +400,19 @@ export async function openInvoiceStudioModal(existingInvoice = null) {
     getCatalog()
   ]);
 
+  let currentMappedComponentOrderId = existingInvoice?.mappedComponentOrderId || 
+    existingInvoice?.metadata?.component_order_id || 
+    (preselectedOrder?.type === 'material' ? preselectedOrder.id : null) || null;
+
   // Extract initial state
   let currentItems = [];
   if (existingInvoice && existingInvoice.items) {
     currentItems = JSON.parse(JSON.stringify(existingInvoice.items));
+  } else if (currentMappedComponentOrderId) {
+    const preOrder = materialOrders.find(m => m.id === currentMappedComponentOrderId);
+    if (preOrder) {
+      currentItems = parseComponentsFromText(preOrder.materialItem, catalog);
+    }
   }
 
   let currentDelivery = {
@@ -352,15 +423,18 @@ export async function openInvoiceStudioModal(existingInvoice = null) {
     deliveryThreshold: existingInvoice?.delivery?.deliveryThreshold ?? 700
   };
 
+  const preOrderObj = currentMappedComponentOrderId ? materialOrders.find(m => m.id === currentMappedComponentOrderId) : null;
+
   let currentMeta = {
-    customer_name: existingInvoice?.metadata?.customer_name || existingInvoice?.customerName || "",
-    phone: existingInvoice?.metadata?.phone || existingInvoice?.customerPhone || "",
+    customer_name: existingInvoice?.metadata?.customer_name || existingInvoice?.customerName || preOrderObj?.customerName || "",
+    phone: existingInvoice?.metadata?.phone || existingInvoice?.customerPhone || preOrderObj?.contactNo || "",
     delivery_address: existingInvoice?.metadata?.delivery_address || existingInvoice?.customerAddress || "",
-    order_notes: existingInvoice?.metadata?.order_notes || existingInvoice?.notes || "",
+    order_notes: existingInvoice?.metadata?.order_notes || existingInvoice?.notes || (currentMappedComponentOrderId ? `Component Order #${currentMappedComponentOrderId}` : ""),
     invoice_no: existingInvoice?.metadata?.invoice_no || existingInvoice?.invoiceNumber || generateDefaultInvoiceNo(),
-    invoice_date: existingInvoice?.metadata?.invoice_date || existingInvoice?.date || new Date().toISOString().split('T')[0],
-    order_type: existingInvoice?.metadata?.order_type || existingInvoice?.orderType || "Component Order",
-    payment_status: existingInvoice?.metadata?.payment_status || existingInvoice?.paymentStatus || "Pending"
+    invoice_date: existingInvoice?.metadata?.invoice_date || existingInvoice?.date || (preOrderObj?.orderDate || new Date().toISOString().split('T')[0]),
+    order_type: existingInvoice?.metadata?.order_type || existingInvoice?.orderType || preOrderObj?.orderType || "Component Order",
+    payment_status: existingInvoice?.metadata?.payment_status || existingInvoice?.paymentStatus || "Pending",
+    component_order_id: currentMappedComponentOrderId
   };
 
   // Extract catalog categories
@@ -384,25 +458,54 @@ export async function openInvoiceStudioModal(existingInvoice = null) {
 
     <div class="modal-body" style="display:flex; flex-direction:column; gap:20px;">
       
-      <!-- 1. AUTO-IMPORT FROM PROJECT OR MATERIAL ORDER -->
-      <div style="background:linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.08) 100%); padding:14px; border-radius:var(--radius-md); border:1px solid rgba(99,102,241,0.25);">
-        <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
-          <span><span class="material-icons-round" style="font-size:18px; vertical-align:middle; color:var(--accent-primary-light);">sync_alt</span> 1-Click Import from Project / Material Order</span>
-          <span style="font-size:0.75rem; color:var(--accent-primary-light); font-weight:600;">Auto-fills customer info & components</span>
-        </label>
-        <select class="form-select" id="inv-import-selector">
-          <option value="">— Select an existing order to auto-populate —</option>
-          <optgroup label="Project Orders">
+      <!-- 1. COMPONENT ORDER MAPPING & 1-CLICK AUTO-POPULATE -->
+      <div style="background:linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.08) 100%); padding:14px 16px; border-radius:var(--radius-md); border:1px solid rgba(99,102,241,0.25);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <label class="form-label" style="margin:0; font-weight:700; display:flex; align-items:center; gap:8px; font-size:0.88rem; color:var(--text-primary);">
+            <span class="material-icons-round" style="color:var(--accent-primary-light); font-size:20px;">link</span>
+            <span>Map to Component Order</span>
+          </label>
+          <span id="mapping-badge-status" class="status-badge ${currentMappedComponentOrderId ? 'completed' : 'pending'}" style="font-size:0.72rem;">
+            ${currentMappedComponentOrderId ? `✓ Mapped to Order #${currentMappedComponentOrderId}` : 'No Component Order Linked'}
+          </span>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center;">
+          <select class="form-select" id="inv-map-component-order" style="font-size:0.85rem;">
+            <option value="">— Select a Component Order to Map & Auto-Fill —</option>
+            ${materialOrders.map(m => {
+              const isSelected = currentMappedComponentOrderId === m.id;
+              const cleanItem = (m.materialItem || 'Components').replace(/[\r\n]+/g, ' ').substring(0, 42);
+              return `<option value="${m.id}" ${isSelected ? 'selected' : ''}>
+                #${m.id} • ${m.customerName || 'Customer'} — ${cleanItem} (${formatCurrency(m.totalPrice || 0)})
+              </option>`;
+            }).join('')}
+          </select>
+
+          <button type="button" class="btn-secondary btn-sm" id="btn-unlink-component-order" title="Unlink Component Order" style="${currentMappedComponentOrderId ? 'display:flex;' : 'display:none;'} align-items:center; gap:4px; padding:6px 12px; font-size:0.8rem;">
+            <span class="material-icons-round" style="font-size:16px;">link_off</span>
+            <span>Unlink</span>
+          </button>
+        </div>
+
+        <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:var(--text-tertiary);">
+          <span>Links this invoice directly to the Component Order and auto-parses catalog items.</span>
+          ${projectOrders.length > 0 ? `
+            <button type="button" id="btn-toggle-project-import" style="background:none; border:none; color:var(--accent-primary-light); cursor:pointer; font-size:0.75rem; text-decoration:underline; padding:0;">
+              Or import from Project Order...
+            </button>
+          ` : ''}
+        </div>
+
+        <div id="project-order-import-row" style="display:none; margin-top:10px; padding-top:8px; border-top:1px dashed rgba(99,102,241,0.2);">
+          <label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Import from Project Order:</label>
+          <select class="form-select" id="inv-import-project-order" style="font-size:0.82rem;">
+            <option value="">— Select Project Order to auto-fill —</option>
             ${projectOrders.map(p => `
-              <option value="project_${p.id}">${p.name} — ${p.projectName} (${formatCurrency(p.payment)})</option>
+              <option value="${p.id}">${p.name} — ${p.projectName} (${formatCurrency(p.payment)})</option>
             `).join('')}
-          </optgroup>
-          <optgroup label="Material Orders">
-            ${materialOrders.map(m => `
-              <option value="material_${m.id}">${m.customerName} — ${m.materialItem ? m.materialItem.substring(0, 35) : 'Components'} (${formatCurrency(m.totalPrice)})</option>
-            `).join('')}
-          </optgroup>
-        </select>
+          </select>
+        </div>
       </div>
 
       <!-- 2. CUSTOMER & INVOICE DETAILS GRID -->
@@ -737,85 +840,94 @@ export async function openInvoiceStudioModal(existingInvoice = null) {
   }
 
   // Auto-import selector change
-  document.getElementById('inv-import-selector').addEventListener('change', (e) => {
-    const val = e.target.value;
+  // Map Component Order selector change
+  const mapSelect = document.getElementById('inv-map-component-order');
+  const unlinkBtn = document.getElementById('btn-unlink-component-order');
+  const mapBadge = document.getElementById('mapping-badge-status');
+  const toggleProjectBtn = document.getElementById('btn-toggle-project-import');
+  const projectRow = document.getElementById('project-order-import-row');
+  const projectSelect = document.getElementById('inv-import-project-order');
+
+  toggleProjectBtn?.addEventListener('click', () => {
+    if (projectRow) {
+      projectRow.style.display = projectRow.style.display === 'none' ? 'block' : 'none';
+    }
+  });
+
+  mapSelect?.addEventListener('change', () => {
+    const val = mapSelect.value;
+    if (!val) {
+      currentMappedComponentOrderId = null;
+      if (unlinkBtn) unlinkBtn.style.display = 'none';
+      if (mapBadge) {
+        mapBadge.className = 'status-badge pending';
+        mapBadge.textContent = 'No Component Order Linked';
+      }
+      return;
+    }
+
+    const orderId = parseInt(val, 10);
+    const mat = materialOrders.find(m => m.id === orderId);
+    if (mat) {
+      currentMappedComponentOrderId = orderId;
+      if (unlinkBtn) unlinkBtn.style.display = 'flex';
+      if (mapBadge) {
+        mapBadge.className = 'status-badge completed';
+        mapBadge.textContent = `✓ Mapped to Order #${orderId}`;
+      }
+
+      document.getElementById('inv-customer-name').value = mat.customerName || '';
+      document.getElementById('inv-phone').value = mat.contactNo || '';
+      document.getElementById('inv-order-type').value = mat.orderType || 'Component Order';
+      document.getElementById('inv-notes').value = `Component Order #${orderId}`;
+
+      currentItems = parseComponentsFromText(mat.materialItem, catalog);
+      recalculateAndRender();
+      showToast(`Mapped to Component Order #${orderId} (${mat.customerName})!`, 'success');
+    }
+  });
+
+  unlinkBtn?.addEventListener('click', () => {
+    currentMappedComponentOrderId = null;
+    if (mapSelect) mapSelect.value = '';
+    if (unlinkBtn) unlinkBtn.style.display = 'none';
+    if (mapBadge) {
+      mapBadge.className = 'status-badge pending';
+      mapBadge.textContent = 'No Component Order Linked';
+    }
+    showToast('Unlinked from Component Order', 'info');
+  });
+
+  projectSelect?.addEventListener('change', () => {
+    const val = projectSelect.value;
     if (!val) return;
-
-    if (val.startsWith('project_')) {
-      const id = parseInt(val.replace('project_', ''), 10);
-      const proj = projectOrders.find(p => p.id === id);
-      if (proj) {
-        document.getElementById('inv-customer-name').value = proj.name || '';
-        document.getElementById('inv-phone').value = proj.phone || '';
-        document.getElementById('inv-order-type').value = 'Project Order';
-        document.getElementById('inv-notes').value = `Project: ${proj.projectName}`;
-
-        // Parse components from materialItem
-        currentItems = [];
-        if (proj.materialItem) {
-          const lines = proj.materialItem.split(/[\n•\r]+/).filter(l => l.trim().length > 0);
-          lines.forEach(l => {
-            let qty = 1;
-            let name = l.trim();
-            const m = l.match(/\((\d+)\)/);
-            if (m) {
-              qty = parseInt(m[1], 10);
-              name = l.replace(/\(\d+\)/, '').trim();
-            }
-            // Match with catalog
-            const matched = catalog.find(c => c.name.toLowerCase() === name.toLowerCase());
-            currentItems.push({
-              name: matched ? matched.name : name,
-              quantity: qty,
-              wholesale_unit_cost: matched ? (matched.wholesale_unit_cost || 0) : 0,
-              unit_price_excl_tax: 0 // Will auto calculate 25% target
-            });
-          });
-        }
-
-        // If no components parsed, add single project line
-        if (currentItems.length === 0) {
-          currentItems.push({
-            name: proj.projectName,
-            quantity: 1,
-            wholesale_unit_cost: proj.materialCost || 0,
-            unit_price_excl_tax: Math.round(proj.payment / 1.18)
-          });
-        }
-        recalculateAndRender();
-        showToast(`Imported components for "${proj.projectName}"!`, 'info');
+    const id = parseInt(val, 10);
+    const proj = projectOrders.find(p => p.id === id);
+    if (proj) {
+      currentMappedComponentOrderId = null;
+      if (mapSelect) mapSelect.value = '';
+      if (unlinkBtn) unlinkBtn.style.display = 'none';
+      if (mapBadge) {
+        mapBadge.className = 'status-badge pending';
+        mapBadge.textContent = 'Imported from Project Order';
       }
-    } else if (val.startsWith('material_')) {
-      const id = parseInt(val.replace('material_', ''), 10);
-      const mat = materialOrders.find(m => m.id === id);
-      if (mat) {
-        document.getElementById('inv-customer-name').value = mat.customerName || '';
-        document.getElementById('inv-phone').value = mat.contactNo || '';
-        document.getElementById('inv-order-type').value = mat.orderType || 'Component Order';
 
-        currentItems = [];
-        if (mat.materialItem) {
-          const lines = mat.materialItem.split(/[\n•\r]+/).filter(l => l.trim().length > 0);
-          lines.forEach(l => {
-            let qty = 1;
-            let name = l.trim();
-            const m = l.match(/\((\d+)\)/);
-            if (m) {
-              qty = parseInt(m[1], 10);
-              name = l.replace(/\(\d+\)/, '').trim();
-            }
-            const matched = catalog.find(c => c.name.toLowerCase() === name.toLowerCase());
-            currentItems.push({
-              name: matched ? matched.name : name,
-              quantity: qty,
-              wholesale_unit_cost: matched ? (matched.wholesale_unit_cost || 0) : 0,
-              unit_price_excl_tax: 0
-            });
-          });
-        }
-        recalculateAndRender();
-        showToast(`Imported components for "${mat.customerName}"!`, 'info');
+      document.getElementById('inv-customer-name').value = proj.name || '';
+      document.getElementById('inv-phone').value = proj.phone || '';
+      document.getElementById('inv-order-type').value = 'Project Order';
+      document.getElementById('inv-notes').value = `Project: ${proj.projectName}`;
+
+      currentItems = parseComponentsFromText(proj.materialItem, catalog);
+      if (currentItems.length === 0) {
+        currentItems.push({
+          name: proj.projectName,
+          quantity: 1,
+          wholesale_unit_cost: proj.materialCost || 0,
+          unit_price_excl_tax: Math.round(proj.payment / 1.18)
+        });
       }
+      recalculateAndRender();
+      showToast(`Imported components for "${proj.projectName}"!`, 'info');
     }
   });
 
@@ -1004,20 +1116,52 @@ export async function openInvoiceStudioModal(existingInvoice = null) {
 
     recalculateAndRender();
 
+    const previousMappedOrderId = existingInvoice?.mappedComponentOrderId || existingInvoice?.metadata?.component_order_id || null;
+
     const invoiceRecord = {
       ...calculatedData,
+      mappedComponentOrderId: currentMappedComponentOrderId,
       createdAt: isEdit ? existingInvoice.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    invoiceRecord.metadata.component_order_id = currentMappedComponentOrderId;
 
     try {
+      let savedInvoiceId;
       if (isEdit) {
         invoiceRecord.id = existingInvoice.id;
+        savedInvoiceId = existingInvoice.id;
         await update('invoices', invoiceRecord);
         showToast('Invoice updated successfully', 'success');
       } else {
-        await add('invoices', invoiceRecord);
+        savedInvoiceId = await add('invoices', invoiceRecord);
+        if (typeof savedInvoiceId !== 'number') {
+          savedInvoiceId = invoiceRecord.id;
+        }
         showToast('Invoice created successfully', 'success');
+      }
+
+      // Bi-directional link updates with materialOrders
+      if (previousMappedOrderId && previousMappedOrderId !== currentMappedComponentOrderId) {
+        const prevOrder = materialOrders.find(m => m.id === previousMappedOrderId);
+        if (prevOrder) {
+          await update('materialOrders', {
+            ...prevOrder,
+            invoiceId: null,
+            invoiceNo: null
+          });
+        }
+      }
+
+      if (currentMappedComponentOrderId) {
+        const newOrder = materialOrders.find(m => m.id === currentMappedComponentOrderId);
+        if (newOrder) {
+          await update('materialOrders', {
+            ...newOrder,
+            invoiceId: savedInvoiceId,
+            invoiceNo: invoiceRecord.metadata?.invoice_no
+          });
+        }
       }
 
       overlay.classList.add('hidden');
@@ -1109,6 +1253,9 @@ function renderCustomerTaxInvoice(container, invoice) {
         <div style="background:#f8fafc; padding:14px; border-radius:6px; border:1px solid #e2e8f0; font-size:12px;">
           <div style="font-size:10px; text-transform:uppercase; font-weight:700; color:#64748b; margin-bottom:6px;">ORDER METADATA</div>
           <div><strong>Order Type:</strong> ${meta.order_type || 'Component Order'}</div>
+          ${(meta.component_order_id || invoice.mappedComponentOrderId) ? `
+            <div style="margin-top:2px;"><strong>Component Order Ref:</strong> #${meta.component_order_id || invoice.mappedComponentOrderId}</div>
+          ` : ''}
           <div style="margin-top:2px;"><strong>Payment Status:</strong> <span style="font-weight:700; color:${meta.payment_status === 'Paid' ? '#10b981' : '#f59e0b'};">${meta.payment_status || 'Pending'}</span></div>
           <div style="margin-top:2px;"><strong>Delivery Mode:</strong> ${invoice.delivery?.deliveryService || 'Direct Handover'}</div>
           <div style="margin-top:2px;"><strong>Place of Supply:</strong> Punjab, India</div>
@@ -1375,6 +1522,9 @@ function generateInvoiceWhatsAppText(invoice) {
   let text = `🧾 *INVOICE — PROJECT MAFIA*\n`;
   text += `📄 *Invoice No:* ${meta.invoice_no}\n`;
   text += `👤 *Customer:* ${meta.customer_name}\n`;
+  if (meta.component_order_id || invoice.mappedComponentOrderId) {
+    text += `📦 *Component Order Ref:* #${meta.component_order_id || invoice.mappedComponentOrderId}\n`;
+  }
   text += `📅 *Date:* ${meta.invoice_date}\n`;
   text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 

@@ -10,8 +10,11 @@ import {
   formatCurrency, formatDate, normalizeStatus, getStatusLabel,
   showToast, showConfirm, debounce, formatDateForInput
 } from '../utils.js';
+import { openInvoiceStudioModal, showInvoicePreview } from './invoices.js';
+import { navigate } from '../main.js';
 
 let currentOrders = [];
+let currentInvoices = [];
 let currentPage = 1;
 const pageSize = 15;
 let searchQuery = '';
@@ -99,11 +102,16 @@ export async function initMaterialOrders() {
 }
 
 async function loadMaterialOrders() {
-  currentOrders = await getMaterialOrders({
-    search: searchQuery,
-    orderType: typeFilter,
-    orderStatus: statusFilter,
-  });
+  const [orders, allInvoices] = await Promise.all([
+    getMaterialOrders({
+      search: searchQuery,
+      orderType: typeFilter,
+      orderStatus: statusFilter,
+    }),
+    getAll('invoices')
+  ]);
+  currentOrders = orders;
+  currentInvoices = allInvoices;
 
   renderMaterialTable();
 }
@@ -209,9 +217,25 @@ function renderMaterialTable() {
     const status = normalizeStatus(order.orderStatus);
     const netProfit = parseFloat(order.netProfit) || 0;
 
+    const mappedInvoice = (currentInvoices || []).find(inv => 
+      (order.invoiceId && inv.id === order.invoiceId) || 
+      inv.mappedComponentOrderId === order.id || 
+      inv.metadata?.component_order_id === order.id
+    );
+
     return `
       <tr data-id="${order.id}">
-        <td class="cell-name">${order.customerName || '—'}</td>
+        <td class="cell-name">
+          <div>${order.customerName || '—'}</div>
+          ${mappedInvoice ? `
+            <div style="margin-top:3px;">
+              <span class="status-badge view-order-invoice" data-invoice-id="${mappedInvoice.id}" style="cursor:pointer; display:inline-flex; align-items:center; gap:3px; font-size:0.68rem; background:rgba(99,102,241,0.12); color:var(--accent-primary-light); border:1px solid rgba(99,102,241,0.25);" title="View Tax Invoice (${mappedInvoice.metadata?.invoice_no})">
+                <span class="material-icons-round" style="font-size:11px;">receipt</span>
+                <span>${mappedInvoice.metadata?.invoice_no || 'Invoice'}</span>
+              </span>
+            </div>
+          ` : ''}
+        </td>
         <td><span class="status-badge ${order.orderType === 'Component Order' ? 'completed' : 'pending'}" style="font-size:0.7rem">${order.orderType || '—'}</span></td>
         <td class="cell-secondary">${formatDate(order.orderDate)}</td>
         <td>${order.materialItem || '—'}</td>
@@ -225,6 +249,11 @@ function renderMaterialTable() {
         <td><span class="status-badge ${status}">${getStatusLabel(status)}</span></td>
         <td>
           <div class="row-actions">
+            <button title="${mappedInvoice ? 'View Tax Invoice (' + (mappedInvoice.metadata?.invoice_no || '') + ')' : 'Create & Map Invoice for this Component Order'}" class="btn-invoice-action ${mappedInvoice ? 'has-invoice' : ''}" data-order-id="${order.id}" data-invoice-id="${mappedInvoice ? mappedInvoice.id : ''}">
+              <span class="material-icons-round" style="color:${mappedInvoice ? 'var(--accent-primary-light)' : 'var(--text-tertiary)'};">
+                ${mappedInvoice ? 'receipt_long' : 'post_add'}
+              </span>
+            </button>
             <button title="Edit" class="edit-material" data-id="${order.id}">
               <span class="material-icons-round">edit</span>
             </button>
@@ -311,8 +340,36 @@ function bindMaterialEvents() {
     openMaterialModal();
   });
 
-  // Delegate edit/delete
+  // Delegate edit/delete and invoice action
   document.getElementById('material-tbody')?.addEventListener('click', async (e) => {
+    const viewInv = e.target.closest('.view-order-invoice');
+    if (viewInv) {
+      const invId = parseInt(viewInv.dataset.invoiceId, 10);
+      const inv = (currentInvoices || []).find(i => i.id === invId);
+      if (inv) {
+        await navigate('invoices');
+        showInvoicePreview(inv);
+        return;
+      }
+    }
+
+    const invAction = e.target.closest('.btn-invoice-action');
+    if (invAction) {
+      const orderId = parseInt(invAction.dataset.orderId, 10);
+      const invId = invAction.dataset.invoiceId ? parseInt(invAction.dataset.invoiceId, 10) : null;
+      if (invId) {
+        const inv = (currentInvoices || []).find(i => i.id === invId);
+        if (inv) {
+          await navigate('invoices');
+          showInvoicePreview(inv);
+        }
+      } else {
+        await navigate('invoices');
+        openInvoiceStudioModal(null, { type: 'material', id: orderId });
+      }
+      return;
+    }
+
     const editBtn = e.target.closest('.edit-material');
     const deleteBtn = e.target.closest('.delete-material');
 
@@ -663,10 +720,17 @@ export async function openConsolidatedProcurementModal() {
   renderView();
 }
 
-export function openMaterialModal(order = null) {
+export async function openMaterialModal(order = null) {
   const isEdit = !!order;
   const overlay = document.getElementById('modal-overlay');
   const container = document.getElementById('modal-container');
+
+  const allInvoices = await getAll('invoices');
+  const mappedInvoice = order ? allInvoices.find(inv => 
+    (order.invoiceId && inv.id === order.invoiceId) || 
+    inv.mappedComponentOrderId === order.id || 
+    inv.metadata?.component_order_id === order.id
+  ) : null;
 
   container.innerHTML = `
     <div class="modal-header">
@@ -676,6 +740,33 @@ export function openMaterialModal(order = null) {
       </button>
     </div>
     <div class="modal-body">
+      ${order ? `
+        <div style="background:linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.08) 100%); padding:12px 16px; border-radius:var(--radius-sm); border:1px solid rgba(99,102,241,0.25); margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="font-size:0.85rem; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                <span class="material-icons-round" style="font-size:18px; color:var(--accent-primary-light);">receipt_long</span>
+                Tax Invoice Mapping:
+              </strong>
+              <span style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px; display:block;">
+                ${mappedInvoice ? `Mapped to Tax Invoice <strong>${mappedInvoice.metadata?.invoice_no}</strong> (${formatDate(mappedInvoice.metadata?.invoice_date)})` : 'No Tax Invoice mapped yet.'}
+              </span>
+            </div>
+            <div>
+              ${mappedInvoice ? `
+                <button type="button" class="btn-xs btn-secondary btn-modal-view-invoice" data-invoice-id="${mappedInvoice.id}">
+                  <span class="material-icons-round" style="font-size:14px;">visibility</span> View Invoice
+                </button>
+              ` : `
+                <button type="button" class="btn-xs btn-primary btn-modal-create-invoice" data-order-id="${order.id}">
+                  <span class="material-icons-round" style="font-size:14px;">post_add</span> Generate Invoice
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
+      ` : ''}
+
       <form id="material-form" class="form-grid">
         <div class="form-group">
           <label class="form-label">Customer Name *</label>
@@ -832,6 +923,24 @@ export function openMaterialModal(order = null) {
     });
   }
 
+  // Invoice mapping buttons in modal
+  document.querySelector('.btn-modal-view-invoice')?.addEventListener('click', async (e) => {
+    const invId = parseInt(e.currentTarget.dataset.invoiceId, 10);
+    const inv = allInvoices.find(i => i.id === invId);
+    if (inv) {
+      overlay.classList.add('hidden');
+      await navigate('invoices');
+      showInvoicePreview(inv);
+    }
+  });
+
+  document.querySelector('.btn-modal-create-invoice')?.addEventListener('click', async (e) => {
+    const orderId = parseInt(e.currentTarget.dataset.orderId, 10);
+    overlay.classList.add('hidden');
+    await navigate('invoices');
+    openInvoiceStudioModal(null, { type: 'material', id: orderId });
+  });
+
   // Close handlers
   document.getElementById('modal-close').onclick = () => overlay.classList.add('hidden');
   document.getElementById('modal-cancel').onclick = () => overlay.classList.add('hidden');
@@ -868,6 +977,8 @@ export function openMaterialModal(order = null) {
         data.createdAt = order.createdAt;
         data.batchId = order.batchId || '';
         data.linkedProjectId = order.linkedProjectId || null;
+        data.invoiceId = order.invoiceId || null;
+        data.invoiceNo = order.invoiceNo || null;
         await update('materialOrders', data);
         showToast('Material order updated');
       } else {

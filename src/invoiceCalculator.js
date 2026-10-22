@@ -135,7 +135,8 @@ export function calculateInvoice(items = [], deliveryParams = {}, metadata = {})
       invoice_no: metadata.invoice_no || metadata.invoiceNumber || generateDefaultInvoiceNo(),
       invoice_date: metadata.invoice_date || metadata.date || new Date().toISOString().split('T')[0],
       order_type: metadata.order_type || metadata.orderType || "Component Order",
-      payment_status: metadata.payment_status || metadata.paymentStatus || "Pending"
+      payment_status: metadata.payment_status || metadata.paymentStatus || "Pending",
+      component_order_id: metadata.component_order_id !== undefined ? metadata.component_order_id : null
     }
   };
 }
