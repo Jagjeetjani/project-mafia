@@ -9,6 +9,7 @@ import {
   formatCurrency, formatDate, formatDateForInput,
   showToast, showConfirm, debounce
 } from '../utils.js';
+import { PAYMENT_QR_IMAGE } from '../assets/paymentQr.js';
 
 let invoices = [];
 let currentFilter = {
@@ -1148,11 +1149,11 @@ function renderCustomerTaxInvoice(container, invoice) {
           <div style="font-weight:700; color:#0f172a; margin-bottom:4px;">Amount in Words:</div>
           <div style="font-style:italic; font-size:12px; font-weight:600; color:#1e3a5f; margin-bottom:14px;">${words}</div>
 
-          <div style="border-top:1px dashed #cbd5e1; padding-top:8px;">
-            <div style="font-weight:700; color:#0f172a; margin-bottom:2px;">Bank / UPI Payment Details:</div>
-            <div><strong>Account Name:</strong> Project Mafia</div>
-            <div><strong>UPI ID:</strong> projectmafia@okaxis</div>
-            <div><strong>Accepted:</strong> Google Pay / PhonePe / Paytm / UPI</div>
+          <div style="border-top:1px dashed #cbd5e1; padding-top:10px;">
+            <div style="font-weight:700; color:#0f172a; margin-bottom:6px; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Scan to Pay:</div>
+            <div style="display:inline-block; padding:6px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+              <img src="${PAYMENT_QR_IMAGE}" alt="UPI Payment QR Code" style="width:125px; height:auto; display:block; border-radius:4px;" />
+            </div>
           </div>
         </div>
 
