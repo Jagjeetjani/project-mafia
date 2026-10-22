@@ -2604,10 +2604,12 @@ a {
   body * {
     visibility: hidden;
   }
-  #printable-procurement-sheet, #printable-procurement-sheet * {
+  #printable-procurement-sheet, #printable-procurement-sheet *,
+  #printable-customer-invoice, #printable-customer-invoice *,
+  #printable-profit-report, #printable-profit-report * {
     visibility: visible;
   }
-  #printable-procurement-sheet {
+  #printable-procurement-sheet, #printable-customer-invoice, #printable-profit-report {
     position: absolute;
     left: 0;
     top: 0;
@@ -2616,5 +2618,109 @@ a {
     background: #fff !important;
   }
 }
+
+/* === Invoice Studio Styles === */
+.invoice-dual-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.invoice-summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invoice-summary-card.profit-card {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(217, 119, 6, 0.08) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.invoice-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.invoice-summary-row.total-row {
+  border-top: 2px solid var(--border-primary);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.invoice-summary-row.profit-total-row {
+  border-top: 2px solid rgba(245, 158, 11, 0.4);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #d97706;
+}
+
+.invoice-item-calc-row {
+  display: grid;
+  grid-template-columns: 2.5fr 1fr 1.2fr 1.2fr 1fr 1.2fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.invoice-item-calc-row.internal-visible {
+  grid-template-columns: 2fr 0.8fr 1fr 1fr 1fr 1fr 1fr auto;
+}
+
+.margin-pill {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  font-size: 0.78rem;
+  display: inline-block;
+}
+
+.margin-pill.high {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.margin-pill.mid {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.margin-pill.low {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.invoice-preview-card {
+  background: white;
+  color: #111;
+  padding: 36px 40px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  max-width: 820px;
+  margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
 
 
