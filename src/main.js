@@ -14,6 +14,7 @@ import { renderWorkPortal, initWorkPortal } from './pages/workPortal.js';
 import { renderTeamPage, initTeamPage } from './pages/team.js';
 import { renderDashboard, initDashboard } from './pages/dashboard.js';
 import { renderProjectOrders, initProjectOrders, openProjectModal } from './pages/projects.js';
+import { renderAssignments, initAssignments, openAssignmentModal } from './pages/assignments.js';
 import { renderMaterialOrders, initMaterialOrders, openMaterialModal } from './pages/materials.js';
 import { renderPorterBatches, initPorterBatches, openBatchModal } from './pages/porterBatches.js';
 import { renderCustomers, initCustomers, openCustomerModal } from './pages/customers.js';
@@ -26,6 +27,7 @@ import { showToast, formatCurrency, formatDate, cleanCustomerName } from './util
 const routes = {
   dashboard: { render: renderDashboard, init: initDashboard, title: 'Dashboard', adminOnly: true },
   projects: { render: renderProjectOrders, init: initProjectOrders, title: 'Project Orders', adminOnly: true },
+  assignments: { render: renderAssignments, init: initAssignments, title: 'Assignment & Creative Orders', adminOnly: true },
   materials: { render: renderMaterialOrders, init: initMaterialOrders, title: 'Material Orders', adminOnly: true },
   batches: { render: renderPorterBatches, init: initPorterBatches, title: 'Porter Delivery Batches', adminOnly: true },
   customers: { render: renderCustomers, init: initCustomers, title: 'Customers', adminOnly: true },
@@ -61,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const storeToRouteMap = {
         projectOrders: 'projects',
+        assignmentOrders: 'assignments',
         materialOrders: 'materials',
         porterBatches: 'batches',
         customers: 'customers',
@@ -84,6 +87,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           try {
             if (currentPage === 'projects') {
               await initProjectOrders();
+            } else if (currentPage === 'assignments') {
+              await initAssignments();
             } else if (currentPage === 'materials') {
               await initMaterialOrders();
             } else if (currentPage === 'batches') {
@@ -248,19 +253,22 @@ export async function forceSyncPreloadedData() {
  */
 export async function updateSidebarBadges() {
   try {
-    const [pCount, mCount, bCount, tCount] = await Promise.all([
+    const [pCount, aCount, mCount, bCount, tCount] = await Promise.all([
       count('projectOrders'),
+      count('assignmentOrders'),
       count('materialOrders'),
       count('porterBatches'),
       count('workTasks')
     ]);
 
     const badgeP = document.getElementById('badge-projects');
+    const badgeA = document.getElementById('badge-assignments');
     const badgeM = document.getElementById('badge-materials');
     const badgeB = document.getElementById('badge-batches');
     const badgeT = document.getElementById('badge-tasks');
 
     if (badgeP) badgeP.textContent = pCount;
+    if (badgeA) badgeA.textContent = aCount;
     if (badgeM) badgeM.textContent = mCount;
     if (badgeB) badgeB.textContent = bCount;
     if (badgeT) badgeT.textContent = tCount;
@@ -506,6 +514,14 @@ function openQuickAddMenu() {
           <span style="color:var(--text-tertiary); font-size:0.85rem;">Track readymade project order, milestones & student details</span>
         </button>
 
+        <button id="qa-assignment" class="quick-add-card" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:20px; background:var(--bg-tertiary); border:1px solid var(--border-primary); border-radius:var(--radius-md); text-align:left; cursor:pointer; transition:var(--transition-fast);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(236,72,153,0.15); color:#ec4899; display:flex; align-items:center; justify-content:center;">
+            <span class="material-icons-round">draw</span>
+          </div>
+          <strong style="color:var(--text-primary); font-size:1.05rem;">Creative / Assignment Order</strong>
+          <span style="color:var(--text-tertiary); font-size:0.85rem;">Reports, black books, posters, and handwritten files</span>
+        </button>
+
         <button id="qa-material" class="quick-add-card" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:20px; background:var(--bg-tertiary); border:1px solid var(--border-primary); border-radius:var(--radius-md); text-align:left; cursor:pointer; transition:var(--transition-fast);">
           <div style="width:40px; height:40px; border-radius:10px; background:rgba(16,185,129,0.15); color:var(--accent-green); display:flex; align-items:center; justify-content:center;">
             <span class="material-icons-round">shopping_cart</span>
@@ -542,6 +558,12 @@ function openQuickAddMenu() {
     overlay.classList.add('hidden');
     navigate('projects');
     setTimeout(() => openProjectModal(), 100);
+  };
+
+  document.getElementById('qa-assignment').onclick = () => {
+    overlay.classList.add('hidden');
+    navigate('assignments');
+    setTimeout(() => openAssignmentModal(), 100);
   };
 
   document.getElementById('qa-material').onclick = () => {

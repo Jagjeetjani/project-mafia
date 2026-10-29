@@ -24,7 +24,7 @@ let isInitialized = false;
 
 // === Local IndexedDB Offline Storage & Sync Queue ===
 const DB_NAME = 'project-mafia-offline-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let localDbPromise = null;
 export function getLocalDB() {
@@ -1316,4 +1316,192 @@ export async function addTaskComment(taskId, authorName, text) {
   await update('workTasks', task);
   return task;
 }
+
+/**
+ * =================================================================
+ * Assignment & Creative Orders (Reports, Posters, Handwritten Files)
+ * =================================================================
+ */
+
+export async function getAssignmentOrders(filters = {}) {
+  let orders = await getAll('assignmentOrders');
+
+  if (filters.status && filters.status !== 'all') {
+    orders = orders.filter(o => o.status === filters.status);
+  }
+
+  if (filters.category && filters.category !== 'all') {
+    orders = orders.filter(o => o.serviceCategory === filters.category);
+  }
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    orders = orders.filter(o =>
+      (o.title && o.title.toLowerCase().includes(q)) ||
+      (o.customerName && o.customerName.toLowerCase().includes(q)) ||
+      (o.contactNo && o.contactNo.includes(q)) ||
+      (o.serviceCategory && o.serviceCategory.toLowerCase().includes(q)) ||
+      (o.assignedWorkerName && o.assignedWorkerName.toLowerCase().includes(q))
+    );
+  }
+
+  return orders.sort((a, b) => new Date(b.orderDate || 0) - new Date(a.orderDate || 0));
+}
+
+export async function getAssignmentStats() {
+  const orders = await getAll('assignmentOrders');
+  const totalOrders = orders.length;
+  let totalRevenue = 0;
+  let totalReceived = 0;
+  let totalPending = 0;
+  let totalOutOfPocket = 0;
+  let totalProfit = 0;
+
+  orders.forEach(o => {
+    const price = parseFloat(o.totalPrice) || 0;
+    const rec = parseFloat(o.received) || 0;
+    const pend = parseFloat(o.balance) || (price - rec);
+    const cost = parseFloat(o.outOfPocketCost) || 0;
+    const prof = parseFloat(o.netProfit) || (price - cost);
+
+    totalRevenue += price;
+    totalReceived += rec;
+    totalPending += pend;
+    totalOutOfPocket += cost;
+    totalProfit += prof;
+  });
+
+  const activeCount = orders.filter(o => o.status !== 'delivered' && o.status !== 'completed').length;
+
+  return {
+    totalOrders,
+    activeCount,
+    totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+    totalReceived: parseFloat(totalReceived.toFixed(2)),
+    totalPending: parseFloat(totalPending.toFixed(2)),
+    totalOutOfPocket: parseFloat(totalOutOfPocket.toFixed(2)),
+    totalProfit: parseFloat(totalProfit.toFixed(2))
+  };
+}
+
+/**
+ * Sync Assignment Order to Work Portal for the assigned worker
+ */
+export async function syncAssignmentTask(assignment) {
+  if (!assignment) return null;
+  const allTasks = await getAll('workTasks');
+  const existingTask = allTasks.find(t => t.assignmentId === assignment.id);
+
+  if (!assignment.assignedWorkerId && !existingTask) {
+    return null;
+  }
+
+  const teamMembers = await getAll('teamMembers');
+  const worker = teamMembers.find(m => m.id === parseInt(assignment.assignedWorkerId, 10));
+
+  if (existingTask) {
+    if (!assignment.assignedWorkerId) {
+      existingTask.assignedToId = null;
+      existingTask.assignedToName = 'Unassigned';
+    } else {
+      existingTask.assignedToId = worker ? worker.id : null;
+      existingTask.assignedToName = worker ? worker.name : 'Unknown';
+    }
+    existingTask.title = assignment.title || `Assignment #${assignment.id}`;
+    existingTask.type = assignment.serviceCategory || 'Assignment / Report Writing';
+    existingTask.priority = assignment.workerPriority || 'standard';
+    existingTask.dueDate = assignment.workerDeadline || assignment.dueDate || '';
+    existingTask.description = `${assignment.instructions || ''}\n\nFormat: ${assignment.paperType || 'Standard'} • Pages/Qty: ${assignment.pageCount || '—'} • Binding: ${assignment.bindingType || 'None'}`;
+    existingTask.referenceLinks = assignment.referenceLinks ? [assignment.referenceLinks] : (existingTask.referenceLinks || []);
+    existingTask.updatedAt = new Date().toISOString();
+    await update('workTasks', existingTask);
+    return existingTask;
+  } else if (assignment.assignedWorkerId) {
+    const newTask = {
+      title: assignment.title || `Assignment #${assignment.id}`,
+      assignmentId: assignment.id,
+      assignedToId: worker ? worker.id : null,
+      assignedToName: worker ? worker.name : 'Unknown',
+      assignedBy: 'Admin',
+      type: assignment.serviceCategory || 'Assignment / Report Writing',
+      priority: assignment.workerPriority || 'standard',
+      status: 'assigned',
+      dueDate: assignment.workerDeadline || assignment.dueDate || '',
+      description: `${assignment.instructions || ''}\n\nFormat: ${assignment.paperType || 'Standard'} • Pages/Qty: ${assignment.pageCount || '—'} • Binding: ${assignment.bindingType || 'None'}`,
+      referenceLinks: assignment.referenceLinks ? [assignment.referenceLinks] : [],
+      deliverableLink: '',
+      workerNotes: '',
+      comments: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    return await add('workTasks', newTask);
+  }
+}
+
+/**
+ * =================================================================
+ * Staff Expenses & Workshop Reimbursements
+ * =================================================================
+ */
+
+export async function getStaffExpenses(filters = {}) {
+  let expenses = await getAll('staffExpenses');
+
+  if (filters.workerId) {
+    const wid = parseInt(filters.workerId, 10);
+    expenses = expenses.filter(e => e.workerId === wid);
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    expenses = expenses.filter(e => e.status === filters.status);
+  }
+
+  if (filters.projectId) {
+    const pid = parseInt(filters.projectId, 10);
+    expenses = expenses.filter(e => e.linkedProjectId === pid);
+  }
+
+  return expenses.sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
+}
+
+export async function getExpenseStats(workerId = null) {
+  let expenses = await getAll('staffExpenses');
+  if (workerId) {
+    const wid = parseInt(workerId, 10);
+    expenses = expenses.filter(e => e.workerId === wid);
+  }
+
+  let totalAmount = 0;
+  let pendingAmount = 0;
+  let reimbursedAmount = 0;
+
+  expenses.forEach(e => {
+    const amt = parseFloat(e.amount) || 0;
+    totalAmount += amt;
+    if (e.status === 'reimbursed') {
+      reimbursedAmount += amt;
+    } else {
+      pendingAmount += amt;
+    }
+  });
+
+  return {
+    totalCount: expenses.length,
+    totalAmount: parseFloat(totalAmount.toFixed(2)),
+    pendingAmount: parseFloat(pendingAmount.toFixed(2)),
+    reimbursedAmount: parseFloat(reimbursedAmount.toFixed(2))
+  };
+}
+
+export async function settleStaffExpense(expenseId) {
+  const expense = await getById('staffExpenses', expenseId);
+  if (!expense) throw new Error('Expense not found');
+
+  expense.status = 'reimbursed';
+  expense.reimbursedAt = new Date().toISOString();
+  await update('staffExpenses', expense);
+  return expense;
+}
+
 

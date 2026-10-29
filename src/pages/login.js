@@ -12,8 +12,8 @@ export function renderLoginPage() {
       <div class="login-container">
         <!-- Logo Header -->
         <div class="login-header">
-          <div class="login-logo-icon">
-            <span class="material-icons-round">rocket_launch</span>
+          <div class="login-logo-img-wrapper">
+            <img src="./logo.png" alt="Project Mafia" class="login-logo-img" />
           </div>
           <h1 class="login-title">Project Mafia</h1>
           <p class="login-subtitle">Workshop Operations & Business Portal</p>
@@ -21,7 +21,7 @@ export function renderLoginPage() {
 
         <!-- Quick 1-Tap Staff Selector Cards -->
         <div class="login-section-title">
-          <span>Select Your Profile to Sign In</span>
+          <span>Select Profile to Sign In</span>
         </div>
 
         <div class="staff-cards-grid" id="staff-cards-grid">
@@ -34,7 +34,7 @@ export function renderLoginPage() {
             <div class="pin-user-avatar" id="pin-avatar"></div>
             <div>
               <div class="pin-user-name" id="pin-user-name"></div>
-              <div class="pin-user-role" id="pin-user-role"></div>
+              <div class="pin-user-specialty" id="pin-user-specialty" style="font-size:0.75rem; color:var(--text-secondary);"></div>
             </div>
           </div>
 
@@ -95,8 +95,7 @@ export async function initLoginPage() {
     }
 
     grid.innerHTML = members.map(m => {
-      const isAdmin = m.role === 'admin';
-      const color = m.avatarColor || (isAdmin ? '#8b5cf6' : '#3b82f6');
+      const color = m.avatarColor || '#6366f1';
       return `
         <div class="staff-card" data-username="${m.username}" data-name="${m.name}" data-role="${m.role}" data-specialty="${m.specialty || ''}" data-color="${color}">
           <div class="staff-card-avatar" style="background:${color};">
@@ -104,10 +103,7 @@ export async function initLoginPage() {
           </div>
           <div class="staff-card-content">
             <div class="staff-card-name">${m.name}</div>
-            <div class="staff-card-specialty">${m.specialty || (isAdmin ? 'Admin' : 'Worker')}</div>
-            <span class="staff-badge ${isAdmin ? 'admin' : 'worker'}">
-              ${isAdmin ? '👑 Admin' : '🔧 Staff'}
-            </span>
+            <div class="staff-card-specialty">${m.specialty || 'Operations'}</div>
           </div>
         </div>
       `;
@@ -141,7 +137,7 @@ function openPinEntry() {
   const pinCard = document.getElementById('pin-entry-card');
   const avatar = document.getElementById('pin-avatar');
   const nameEl = document.getElementById('pin-user-name');
-  const roleEl = document.getElementById('pin-user-role');
+  const specEl = document.getElementById('pin-user-specialty');
   const pinInput = document.getElementById('pin-input');
 
   if (avatar) {
@@ -149,7 +145,7 @@ function openPinEntry() {
     avatar.style.background = selectedProfile.color;
   }
   if (nameEl) nameEl.textContent = selectedProfile.name;
-  if (roleEl) roleEl.textContent = `${selectedProfile.role === 'admin' ? '👑 Admin' : '🔧 Worker'} • ${selectedProfile.specialty}`;
+  if (specEl) specEl.textContent = selectedProfile.specialty || 'Operations';
 
   if (pinInput) {
     pinInput.value = '';
@@ -218,3 +214,4 @@ async function submitLogin() {
     pinInput.focus();
   }
 }
+

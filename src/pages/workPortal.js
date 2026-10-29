@@ -1,20 +1,23 @@
 /**
  * Project Mafia — Work Portal (Tasks, Assignments & Workshop Delegation)
- * Worker Portal: Strict zero-financial interface focused purely on technical execution
- * Admin View: Dispatch, workload monitoring, and deliverable review handshake
+ * Dual-Mode for Admin: "My Work" vs "All Team Tasks & Dispatch"
+ * Zero-financial task execution for workers
+ * Staff Out-of-Pocket Expense Logging (Project-Specific & General Overhead)
  */
 import {
   getWorkTasks, getTeamMembers, updateTaskStatus, addTaskComment,
+  getStaffExpenses, getExpenseStats, settleStaffExpense,
   add, update, remove, getById, getAll
 } from '../db.js';
 import { getCurrentUser, isAdmin, isWorker } from '../auth.js';
-import { formatDate, showToast, showConfirm, debounce } from '../utils.js';
+import { formatDate, formatCurrency, showToast, showConfirm, debounce } from '../utils.js';
 
 let currentTasks = [];
 let currentMembers = [];
 let statusFilter = 'all';
 let workerFilter = '';
 let searchQuery = '';
+let adminViewMode = 'my_work'; // 'my_work' or 'team_work'
 
 export function renderWorkPortal() {
   const user = getCurrentUser();
@@ -23,24 +26,51 @@ export function renderWorkPortal() {
   return `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">${adminMode ? 'Team Tasks & Work Dispatch' : 'My Work Portal'}</h1>
+        <h1 class="page-title">${adminMode && adminViewMode === 'team_work' ? 'Team Tasks & Work Dispatch' : 'My Work Portal'}</h1>
         <p class="page-subtitle">
-          ${adminMode 
+          ${adminMode && adminViewMode === 'team_work' 
             ? 'Assign hardware builds, manage report assignments, and review worker deliverables' 
             : `Welcome, ${user?.name || 'Staff'}. Track your assigned builds, access schematics, and submit deliverables.`}
         </p>
       </div>
       <div class="page-header-actions">
+        <button class="btn-secondary" id="btn-log-expense" title="Log money spent out-of-pocket for project parts or general shop items">
+          <span class="material-icons-round" style="color:var(--text-warning);">receipt_long</span>
+          <span>Log Expense</span>
+        </button>
         ${adminMode ? `
+          <button class="btn-secondary" id="btn-view-team-expenses" title="Review staff reimbursement claims">
+            <span class="material-icons-round" style="color:var(--accent-primary-light);">account_balance_wallet</span>
+            <span>Staff Expenses</span>
+          </button>
           <button class="btn-primary" id="btn-create-task">
             <span class="material-icons-round">add_task</span>
             <span>New Task</span>
           </button>
-        ` : ''}
+        ` : `
+          <button class="btn-secondary" id="btn-my-expenses" title="View your logged expenses & reimbursement status">
+            <span class="material-icons-round" style="color:var(--text-success);">price_check</span>
+            <span>My Expenses</span>
+          </button>
+        `}
       </div>
     </div>
 
-    <!-- Task Stats -->
+    <!-- Admin Segmented View Toggle (My Work vs Team Tasks) -->
+    ${adminMode ? `
+      <div class="segmented-control" id="admin-work-toggle" style="margin-bottom:16px;">
+        <button class="segment-btn ${adminViewMode === 'my_work' ? 'active' : ''}" data-mode="my_work">
+          <span class="material-icons-round" style="font-size:16px;">person</span>
+          <span>My Assigned Tasks</span>
+        </button>
+        <button class="segment-btn ${adminViewMode === 'team_work' ? 'active' : ''}" data-mode="team_work">
+          <span class="material-icons-round" style="font-size:16px;">groups</span>
+          <span>All Team Tasks & Dispatch</span>
+        </button>
+      </div>
+    ` : ''}
+
+    <!-- Task Stats Grid -->
     <div class="stats-grid" id="task-stats-grid"></div>
 
     <!-- Toolbar Filters -->
@@ -51,7 +81,7 @@ export function renderWorkPortal() {
           <input type="text" id="task-search" placeholder="Search tasks, project, type..." />
         </div>
         <div class="table-filters" style="display:flex; gap:10px; flex-wrap:wrap;">
-          ${adminMode ? `
+          ${adminMode && adminViewMode === 'team_work' ? `
             <select class="filter-select" id="task-worker-filter">
               <option value="">All Workers</option>
             </select>
@@ -80,11 +110,11 @@ export async function initWorkPortal() {
   const user = getCurrentUser();
   currentMembers = await getTeamMembers();
 
-  // Populate worker filter for admin
+  // Populate worker filter for admin in team mode
   const workerFilterEl = document.getElementById('task-worker-filter');
-  if (workerFilterEl && isAdmin()) {
+  if (workerFilterEl && isAdmin() && adminViewMode === 'team_work') {
     workerFilterEl.innerHTML = `<option value="">All Workers</option>` + 
-      currentMembers.map(m => `<option value="${m.id}">${m.name} (${m.role})</option>`).join('');
+      currentMembers.map(m => `<option value="${m.id}">${m.name} (${m.specialty || m.role})</option>`).join('');
     workerFilterEl.value = workerFilter;
   }
 
@@ -99,11 +129,15 @@ async function loadTasks() {
     status: statusFilter,
   };
 
-  // If worker, force filter by their worker ID
+  // If worker, or admin in "my_work" mode: filter only tasks assigned to current user
   if (isWorker() && user) {
     filters.workerId = user.id;
-  } else if (isAdmin() && workerFilter) {
-    filters.workerId = workerFilter;
+  } else if (isAdmin()) {
+    if (adminViewMode === 'my_work' && user) {
+      filters.workerId = user.id;
+    } else if (adminViewMode === 'team_work' && workerFilter) {
+      filters.workerId = workerFilter;
+    }
   }
 
   currentTasks = await getWorkTasks(filters);
@@ -111,15 +145,18 @@ async function loadTasks() {
   renderTaskCards();
 }
 
-function renderTaskStats() {
+async function renderTaskStats() {
   const grid = document.getElementById('task-stats-grid');
   if (!grid) return;
 
+  const user = getCurrentUser();
   const total = currentTasks.length;
   const inProgress = currentTasks.filter(t => t.status === 'in_progress').length;
   const review = currentTasks.filter(t => t.status === 'review').length;
   const completed = currentTasks.filter(t => t.status === 'completed').length;
   const urgent = currentTasks.filter(t => t.priority === 'urgent' && t.status !== 'completed').length;
+
+  const expenseStats = await getExpenseStats(isAdmin() && adminViewMode === 'team_work' ? null : user?.id);
 
   grid.innerHTML = `
     <div class="stat-card">
@@ -167,6 +204,15 @@ function renderTaskStats() {
       <div class="stat-card-label">Completed</div>
       <div class="stat-card-value" style="color:var(--text-success);">${completed}</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-card-header">
+        <div class="stat-card-icon orange">
+          <span class="material-icons-round">receipt</span>
+        </div>
+      </div>
+      <div class="stat-card-label">${isAdmin() && adminViewMode === 'team_work' ? 'Team Pending Claims' : 'Reimbursement Owed'}</div>
+      <div class="stat-card-value" style="color:var(--text-warning);">${formatCurrency(expenseStats.pendingAmount)}</div>
+    </div>
   `;
 }
 
@@ -181,7 +227,7 @@ function renderTaskCards() {
           <span class="material-icons-round">assignment_turned_in</span>
         </div>
         <h3>No tasks found</h3>
-        <p>${isAdmin() ? 'Create a new task or assign orders from the Project Orders tab.' : 'You currently have no tasks assigned to you. Enjoy your day!'}</p>
+        <p>${isAdmin() && adminViewMode === 'team_work' ? 'Create a new task or assign orders from the Project Orders tab.' : 'You currently have no tasks assigned to you. Enjoy your day!'}</p>
       </div>
     `;
     return;
@@ -192,7 +238,6 @@ function renderTaskCards() {
     const isReview = task.status === 'review';
     const isCompleted = task.status === 'completed';
 
-    // Status label & color
     const statusMap = {
       assigned: { label: 'Assigned', class: 'pending' },
       in_progress: { label: 'In Progress', class: 'in-assembly' },
@@ -201,7 +246,6 @@ function renderTaskCards() {
     };
     const sInfo = statusMap[task.status] || { label: task.status, class: 'pending' };
 
-    // Due date calculation
     let dueBadge = '';
     if (task.dueDate) {
       const dueTime = new Date(task.dueDate).getTime();
@@ -228,6 +272,11 @@ function renderTaskCards() {
                 (Project #${task.projectId})
               </span>
             ` : ''}
+            ${task.assignmentId ? `
+              <span style="font-size:0.68rem; color:var(--accent-purple); font-weight:600;" title="Linked to Creative Order #${task.assignmentId}">
+                (Creative #${task.assignmentId})
+              </span>
+            ` : ''}
           </div>
 
           ${isAdmin() ? `
@@ -244,7 +293,7 @@ function renderTaskCards() {
 
         <h3 class="task-card-title">${task.title || 'Untitled Task'}</h3>
 
-        ${isAdmin() ? `
+        ${isAdmin() && adminViewMode === 'team_work' ? `
           <div style="display:flex; align-items:center; gap:6px; margin: 8px 0; font-size:0.78rem; color:var(--text-secondary);">
             <span class="material-icons-round" style="font-size:15px; color:var(--accent-purple);">badge</span>
             <span>Assigned to: <strong>${task.assignedToName || 'Unassigned'}</strong></span>
@@ -255,7 +304,6 @@ function renderTaskCards() {
           ${dueBadge || '<span style="font-size:0.7rem; color:var(--text-tertiary);">No deadline set</span>'}
         </div>
 
-        <!-- Description / Specs -->
         ${task.description ? `
           <div class="task-description">
             <strong style="display:block; font-size:0.72rem; color:var(--text-tertiary); margin-bottom:2px;">REQUIREMENTS / BRIEF:</strong>
@@ -263,18 +311,16 @@ function renderTaskCards() {
           </div>
         ` : ''}
 
-        <!-- Admin Technical Instructions -->
         ${task.adminNotes ? `
           <div class="task-admin-notes">
             <span class="material-icons-round" style="font-size:14px; vertical-align:middle; color:var(--accent-primary-light);">info</span>
-            <span><strong>Admin Note:</strong> ${task.adminNotes}</span>
+            <span><strong>Instructions:</strong> ${task.adminNotes}</span>
           </div>
         ` : ''}
 
-        <!-- Reference Links from Admin -->
         ${Array.isArray(task.referenceLinks) && task.referenceLinks.length > 0 ? `
           <div style="margin: 10px 0;">
-            <div style="font-size:0.72rem; color:var(--text-tertiary); font-weight:600; margin-bottom:4px;">REFERENCE SCHEMATICS & FILES:</div>
+            <div style="font-size:0.72rem; color:var(--text-tertiary); font-weight:600; margin-bottom:4px;">REFERENCE SCHEMATICS & PROMPTS:</div>
             <div style="display:flex; flex-direction:column; gap:4px;">
               ${task.referenceLinks.map(link => {
                 const url = typeof link === 'string' ? link : link.url;
@@ -290,7 +336,6 @@ function renderTaskCards() {
           </div>
         ` : ''}
 
-        <!-- Worker Deliverables (If submitted) -->
         ${task.deliverableLink ? `
           <div class="task-deliverable-box">
             <div style="font-size:0.72rem; color:var(--accent-green); font-weight:700; margin-bottom:3px; display:flex; align-items:center; gap:4px;">
@@ -304,15 +349,12 @@ function renderTaskCards() {
           </div>
         ` : ''}
 
-        <!-- Actions / Workflow Buttons -->
         <div class="task-card-footer">
-          <!-- Comments count button -->
           <button class="btn-ghost btn-sm view-comments-btn" data-id="${task.id}" style="color:var(--text-secondary); padding:4px 8px;">
             <span class="material-icons-round" style="font-size:15px;">chat_bubble_outline</span>
             <span>${Array.isArray(task.comments) ? task.comments.length : 0} notes</span>
           </button>
 
-          <!-- Primary Workflow Action -->
           <div>
             ${isAdmin() && isReview ? `
               <div style="display:flex; gap:6px;">
@@ -338,6 +380,20 @@ function renderTaskCards() {
 }
 
 function bindWorkEvents() {
+  // Admin View Mode Toggle (My Work vs All Team)
+  document.querySelectorAll('#admin-work-toggle .segment-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      adminViewMode = btn.dataset.mode;
+      document.querySelectorAll('#admin-work-toggle .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const titleEl = document.querySelector('.page-title');
+      if (titleEl) {
+        titleEl.textContent = adminViewMode === 'team_work' ? 'Team Tasks & Work Dispatch' : 'My Work Portal';
+      }
+      loadTasks();
+    });
+  });
+
   // Search
   document.getElementById('task-search')?.addEventListener('input', debounce((e) => {
     searchQuery = e.target.value;
@@ -350,7 +406,7 @@ function bindWorkEvents() {
     loadTasks();
   });
 
-  // Worker Filter (Admin)
+  // Worker Filter (Admin in team mode)
   document.getElementById('task-worker-filter')?.addEventListener('change', (e) => {
     workerFilter = e.target.value;
     loadTasks();
@@ -359,6 +415,22 @@ function bindWorkEvents() {
   // Admin Create Task
   document.getElementById('btn-create-task')?.addEventListener('click', () => {
     openTaskModal();
+  });
+
+  // Log Expense Button
+  document.getElementById('btn-log-expense')?.addEventListener('click', () => {
+    openLogExpenseModal();
+  });
+
+  // Admin View Team Expenses
+  document.getElementById('btn-view-team-expenses')?.addEventListener('click', () => {
+    openTeamExpensesModal();
+  });
+
+  // Worker View My Expenses
+  document.getElementById('btn-my-expenses')?.addEventListener('click', () => {
+    const user = getCurrentUser();
+    openTeamExpensesModal(user?.id);
   });
 
   // Delegated Task Actions
@@ -386,7 +458,7 @@ function bindWorkEvents() {
 
     if (approveBtn && isAdmin()) {
       const id = parseInt(approveBtn.dataset.id, 10);
-      const confirmed = await showConfirm('Approve Task', 'Approve this work as Completed? If linked to a project order, this will mark the project ready.');
+      const confirmed = await showConfirm('Approve Task', 'Approve this work as Completed?');
       if (confirmed) {
         await updateTaskStatus(id, 'completed');
         showToast('Task approved as Completed!', 'success');
@@ -425,6 +497,242 @@ function bindWorkEvents() {
       }
       return;
     }
+  });
+}
+
+/**
+ * Log Out-of-Pocket Expense Modal (For Worker & Admin)
+ */
+export async function openLogExpenseModal(linkedProjectId = null) {
+  const overlay = document.getElementById('modal-overlay');
+  const container = document.getElementById('modal-container');
+  if (!overlay || !container) return;
+
+  const user = getCurrentUser();
+  const allProjects = await getAll('projectOrders');
+  const allAssignments = await getAll('assignmentOrders');
+
+  container.innerHTML = `
+    <div class="modal-header">
+      <h2><span class="material-icons-round" style="color:var(--text-warning); vertical-align:middle;">receipt_long</span> Log Expense / Out-of-Pocket Purchase</h2>
+      <button class="modal-close" id="modal-close"><span class="material-icons-round">close</span></button>
+    </div>
+    <form id="log-expense-form">
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Amount Spent (₹) *</label>
+            <input class="form-input" type="number" step="0.01" name="amount" placeholder="e.g. 180" required autofocus />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Expense Category *</label>
+            <select class="form-select" name="category" required>
+              <option value="Component Sourced Locally">Component Sourced Locally</option>
+              <option value="Stationery, Printing & Paper">Stationery, Printing & Paper</option>
+              <option value="Workshop Tools, Solder & Consumables">Workshop Tools & Consumables</option>
+              <option value="Conveyance / Travel / Auto Fare">Conveyance / Travel / Auto Fare</option>
+              <option value="Refreshment & Snacks">Refreshment & Snacks</option>
+              <option value="Miscellaneous">Miscellaneous</option>
+            </select>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">Expense Nature</label>
+            <div style="display:flex; gap:16px; margin-top:4px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="radio" name="expenseType" value="general" ${!linkedProjectId ? 'checked' : ''} id="exp-type-general" />
+                <span>General Workshop Overhead (Non-Project)</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="radio" name="expenseType" value="project" ${linkedProjectId ? 'checked' : ''} id="exp-type-project" />
+                <span>Specific Project / Assignment</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group full-width" id="project-link-group" style="${linkedProjectId ? '' : 'display:none;'}">
+            <label class="form-label">Select Project or Creative Order</label>
+            <select class="form-select" name="linkedOrderId">
+              <option value="">— Select Order —</option>
+              <optgroup label="Hardware Project Orders">
+                ${allProjects.map(p => `<option value="proj_${p.id}" ${linkedProjectId === p.id ? 'selected' : ''}>#${p.id} — ${p.projectName || p.name}</option>`).join('')}
+              </optgroup>
+              <optgroup label="Creative & Assignment Orders">
+                ${allAssignments.map(a => `<option value="assign_${a.id}">#${a.id} — ${a.title}</option>`).join('')}
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">What did you buy? (Description / Shop Name) *</label>
+            <textarea class="form-input" name="description" rows="2" placeholder="e.g. Bought replacement 5V 10A relay from local electronics shop because 1 was faulty." required></textarea>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">Receipt / Bill Photo Link (Drive / Image URL, Optional)</label>
+            <input class="form-input" type="url" name="billUrl" placeholder="https://drive.google.com/... or receipt link" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="modal-cancel">Cancel</button>
+        <button type="submit" class="btn-primary">
+          <span class="material-icons-round">save</span>
+          <span>Submit Expense Claim</span>
+        </button>
+      </div>
+    </form>
+  `;
+
+  overlay.classList.remove('hidden');
+  const closeFn = () => overlay.classList.add('hidden');
+  document.getElementById('modal-close')?.addEventListener('click', closeFn);
+  document.getElementById('modal-cancel')?.addEventListener('click', closeFn);
+
+  // Toggle project dropdown
+  document.getElementById('exp-type-general')?.addEventListener('change', () => {
+    document.getElementById('project-link-group').style.display = 'none';
+  });
+  document.getElementById('exp-type-project')?.addEventListener('change', () => {
+    document.getElementById('project-link-group').style.display = 'block';
+  });
+
+  document.getElementById('log-expense-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const amount = parseFloat(form.amount.value) || 0;
+    const category = form.category.value;
+    const isProject = form.expenseType.value === 'project';
+    const linkedVal = form.linkedOrderId.value;
+
+    let linkedProjectId = null;
+    let linkedAssignmentId = null;
+    if (isProject && linkedVal) {
+      if (linkedVal.startsWith('proj_')) linkedProjectId = parseInt(linkedVal.replace('proj_', ''), 10);
+      else if (linkedVal.startsWith('assign_')) linkedAssignmentId = parseInt(linkedVal.replace('assign_', ''), 10);
+    }
+
+    const expenseData = {
+      amount,
+      category,
+      expenseType: isProject ? 'project_specific' : 'general_overhead',
+      linkedProjectId,
+      linkedAssignmentId,
+      description: form.description.value.trim(),
+      billUrl: form.billUrl.value.trim(),
+      status: 'pending', // pending, reimbursed
+      workerId: user?.id || 1,
+      workerName: user?.name || 'Staff',
+      date: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await add('staffExpenses', expenseData);
+      showToast(`Expense of ${formatCurrency(amount)} logged!`, 'success');
+      closeFn();
+      renderTaskStats();
+    } catch (err) {
+      showToast('Error logging expense: ' + err.message, 'error');
+    }
+  });
+}
+
+/**
+ * Team Expenses & Reimbursements Review Modal
+ */
+export async function openTeamExpensesModal(filterWorkerId = null) {
+  const overlay = document.getElementById('modal-overlay');
+  const container = document.getElementById('modal-container');
+  if (!overlay || !container) return;
+
+  const adminMode = isAdmin();
+  const expenses = await getStaffExpenses(filterWorkerId ? { workerId: filterWorkerId } : {});
+
+  container.innerHTML = `
+    <div class="modal-header">
+      <h2><span class="material-icons-round" style="color:var(--accent-primary-light); vertical-align:middle;">receipt_long</span> ${filterWorkerId ? 'My Expenses & Reimbursements' : 'Team Expense Claims'}</h2>
+      <button class="modal-close" id="modal-close"><span class="material-icons-round">close</span></button>
+    </div>
+    <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
+      ${expenses.length === 0 ? `
+        <div style="text-align:center; padding:30px; color:var(--text-tertiary);">No expenses recorded.</div>
+      ` : `
+        <div class="table-scroll">
+          <table class="data-table" style="font-size:0.82rem;">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Staff</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Linked Order</th>
+                <th>Amount</th>
+                <th>Status</th>
+                ${adminMode ? '<th>Action</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${expenses.map(exp => `
+                <tr data-exp-id="${exp.id}">
+                  <td>${formatDate(exp.date)}</td>
+                  <td><strong>${exp.workerName}</strong></td>
+                  <td><span class="badge badge-type" style="font-size:0.68rem;">${exp.category}</span></td>
+                  <td>
+                    <div>${exp.description}</div>
+                    ${exp.billUrl ? `<a href="${exp.billUrl}" target="_blank" style="font-size:0.7rem; color:var(--accent-primary-light); text-decoration:underline;">View Receipt</a>` : ''}
+                  </td>
+                  <td>
+                    ${exp.linkedProjectId ? `<span style="color:var(--accent-purple);">Project #${exp.linkedProjectId}</span>` : ''}
+                    ${exp.linkedAssignmentId ? `<span style="color:var(--accent-primary-light);">Creative #${exp.linkedAssignmentId}</span>` : ''}
+                    ${!exp.linkedProjectId && !exp.linkedAssignmentId ? '<span style="color:var(--text-tertiary);">General Overhead</span>' : ''}
+                  </td>
+                  <td class="cell-money" style="font-weight:700;">${formatCurrency(exp.amount)}</td>
+                  <td>
+                    <span class="status-badge ${exp.status === 'reimbursed' ? 'delivered' : 'pending'}" style="font-size:0.68rem;">
+                      ${exp.status === 'reimbursed' ? 'Reimbursed' : 'Pending Claim'}
+                    </span>
+                  </td>
+                  ${adminMode ? `
+                    <td>
+                      ${exp.status !== 'reimbursed' ? `
+                        <button class="btn-primary btn-xs btn-settle-expense" data-id="${exp.id}">
+                          <span>Settle / Paid</span>
+                        </button>
+                      ` : '<span style="font-size:0.7rem; color:var(--text-success);">Settled</span>'}
+                    </td>
+                  ` : ''}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" id="modal-close-footer">Close</button>
+    </div>
+  `;
+
+  overlay.classList.remove('hidden');
+  const closeFn = () => overlay.classList.add('hidden');
+  document.getElementById('modal-close')?.addEventListener('click', closeFn);
+  document.getElementById('modal-close-footer')?.addEventListener('click', closeFn);
+
+  // Settle expense handler
+  container.querySelectorAll('.btn-settle-expense').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const expId = parseInt(btn.dataset.id, 10);
+      try {
+        await settleStaffExpense(expId);
+        showToast('Expense marked as Reimbursed!', 'success');
+        openTeamExpensesModal(filterWorkerId);
+        renderTaskStats();
+      } catch (err) {
+        showToast('Error settling expense: ' + err.message, 'error');
+      }
+    });
   });
 }
 
@@ -582,6 +890,7 @@ async function openTaskModal(task = null) {
 
   const members = await getTeamMembers();
   const allProjects = await getAll('projectOrders');
+  const allAssignments = await getAll('assignmentOrders');
 
   container.innerHTML = `
     <div class="modal-header">
@@ -619,14 +928,23 @@ async function openTaskModal(task = null) {
           </div>
 
           <div class="form-group">
-            <label class="form-label">Link to Project Order (Optional)</label>
-            <select class="form-input" name="projectId">
-              <option value="">None (Standalone Assignment / Task)</option>
-              ${allProjects.map(p => `
-                <option value="${p.id}" ${task?.projectId === p.id ? 'selected' : ''}>
-                  #${p.id} — ${p.projectName || p.name}
-                </option>
-              `).join('')}
+            <label class="form-label">Link to Project or Creative Order (Optional)</label>
+            <select class="form-input" name="linkedOrderId">
+              <option value="">None (Independent Task)</option>
+              <optgroup label="Hardware Projects">
+                ${allProjects.map(p => `
+                  <option value="proj_${p.id}" ${task?.projectId === p.id ? 'selected' : ''}>
+                    #${p.id} — ${p.projectName || p.name}
+                  </option>
+                `).join('')}
+              </optgroup>
+              <optgroup label="Creative & Assignments">
+                ${allAssignments.map(a => `
+                  <option value="assign_${a.id}" ${task?.assignmentId === a.id ? 'selected' : ''}>
+                    #${a.id} — ${a.title}
+                  </option>
+                `).join('')}
+              </optgroup>
             </select>
           </div>
 
@@ -691,8 +1009,15 @@ async function openTaskModal(task = null) {
     const form = e.target;
     const workerId = parseInt(form.assignedToId.value, 10);
     const worker = members.find(m => m.id === workerId);
-    const projId = form.projectId.value ? parseInt(form.projectId.value, 10) : null;
+    const linkedVal = form.linkedOrderId.value;
     const refLink = form.referenceLink.value.trim();
+
+    let projId = null;
+    let assignId = null;
+    if (linkedVal) {
+      if (linkedVal.startsWith('proj_')) projId = parseInt(linkedVal.replace('proj_', ''), 10);
+      else if (linkedVal.startsWith('assign_')) assignId = parseInt(linkedVal.replace('assign_', ''), 10);
+    }
 
     const taskData = {
       title: form.title.value.trim(),
@@ -701,6 +1026,7 @@ async function openTaskModal(task = null) {
       assignedBy: 'Admin',
       type: form.type.value,
       projectId: projId,
+      assignmentId: assignId,
       priority: form.priority.value,
       dueDate: form.dueDate.value,
       status: form.status.value,

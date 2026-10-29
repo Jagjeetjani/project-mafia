@@ -296,3 +296,4 @@ function openMemberModal(member = null) {
     }
   });
 }
+

@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="description" content="Project Mafia - Business Management Software for Ready-Made Projects & Components" />
   <title>Project Mafia — Business Manager</title>
-  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <link rel="icon" type="image/png" href="./favicon.png" />
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
   <link rel="manifest" href="./manifest.json" />
   <meta name="theme-color" content="#0a0e1a" />
   <!-- iOS Safari PWA / Fullscreen Optimization -->
@@ -28,8 +29,8 @@
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
         <div class="logo">
-          <div class="logo-icon">
-            <span class="material-icons-round">rocket_launch</span>
+          <div class="logo-icon logo-icon-custom">
+            <img src="./logo.png" alt="Project Mafia" class="sidebar-logo-img" />
           </div>
           <div class="logo-text">
             <h1>Project Mafia</h1>
@@ -61,6 +62,11 @@
             <span class="material-icons-round">inventory_2</span>
             <span>Project Orders</span>
             <span class="nav-badge" id="badge-projects">0</span>
+          </a>
+          <a href="#" class="nav-item admin-only-nav" data-page="assignments">
+            <span class="material-icons-round">draw</span>
+            <span>Creative Orders</span>
+            <span class="nav-badge" id="badge-assignments">0</span>
           </a>
           <a href="#" class="nav-item admin-only-nav" data-page="materials">
             <span class="material-icons-round">shopping_cart</span>

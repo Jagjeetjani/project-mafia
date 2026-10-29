@@ -149,3 +149,4 @@ export async function authenticate(username, pin) {
   setCurrentUser(sessionUser);
   return sessionUser;
 }
+

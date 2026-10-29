@@ -215,6 +215,21 @@ a {
   gap: var(--space-md);
 }
 
+.logo-icon.logo-icon-custom {
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.sidebar-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: 0 0 15px rgba(220, 38, 38, 0.4);
+}
+
 .logo-icon {
   width: 42px;
   height: 42px;
@@ -2903,6 +2918,57 @@ a {
 .login-header {
   text-align: center;
   margin-bottom: 24px;
+}
+
+.login-logo-img-wrapper {
+  width: 90px;
+  height: 90px;
+  margin: 0 auto 14px;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(220, 38, 38, 0.4), 0 0 25px rgba(239, 68, 68, 0.25);
+  border: 2px solid rgba(239, 68, 68, 0.35);
+}
+
+.login-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.segmented-control {
+  display: flex;
+  background: var(--bg-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  width: fit-content;
+  gap: 4px;
+}
+
+.segment-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segment-btn:hover {
+  color: var(--text-primary);
+}
+
+.segment-btn.active {
+  background: var(--accent-primary);
+  color: white;
+  box-shadow: var(--shadow-sm);
 }
 
 .login-logo-icon {
