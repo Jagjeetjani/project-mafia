@@ -1,13 +1,17 @@
 /**
  * Project Mafia — Main Application Entry Point
  * Routing, Quick Add, Global Search, Notifications, Database Seeding
- * Enhanced with Porter Batches, Mutual Dropdown Closing & Wholesaler Sync
+ * Enhanced with Role-Based Access Control (RBAC), Work Portal & Delegation
  */
 import {
   initDB, getAll, bulkAdd, count, add, clearStore, update,
   resetProjectOrdersToSeed, resetMaterialOrdersToSeed
 } from './db.js';
 import { isCloudConnected } from './firebase.js';
+import { getCurrentUser, logout, isAdmin, isWorker, checkAndSeedTeam } from './auth.js';
+import { renderLoginPage, initLoginPage } from './pages/login.js';
+import { renderWorkPortal, initWorkPortal } from './pages/workPortal.js';
+import { renderTeamPage, initTeamPage } from './pages/team.js';
 import { renderDashboard, initDashboard } from './pages/dashboard.js';
 import { renderProjectOrders, initProjectOrders, openProjectModal } from './pages/projects.js';
 import { renderMaterialOrders, initMaterialOrders, openMaterialModal } from './pages/materials.js';
@@ -18,15 +22,17 @@ import { renderImportExport, initImportExport } from './pages/importExport.js';
 import { seedProjectOrders, seedMaterialOrders, seedPorterBatches } from './seedData.js';
 import { showToast, formatCurrency, formatDate, cleanCustomerName } from './utils.js';
 
-// Route Definitions
+// Route Definitions with Role Guards
 const routes = {
-  dashboard: { render: renderDashboard, init: initDashboard, title: 'Dashboard' },
-  projects: { render: renderProjectOrders, init: initProjectOrders, title: 'Project Orders' },
-  materials: { render: renderMaterialOrders, init: initMaterialOrders, title: 'Material Orders' },
-  batches: { render: renderPorterBatches, init: initPorterBatches, title: 'Porter Delivery Batches' },
-  customers: { render: renderCustomers, init: initCustomers, title: 'Customers' },
-  invoices: { render: renderInvoices, init: initInvoices, title: 'Invoices' },
-  import: { render: renderImportExport, init: initImportExport, title: 'Import / Export' },
+  dashboard: { render: renderDashboard, init: initDashboard, title: 'Dashboard', adminOnly: true },
+  projects: { render: renderProjectOrders, init: initProjectOrders, title: 'Project Orders', adminOnly: true },
+  materials: { render: renderMaterialOrders, init: initMaterialOrders, title: 'Material Orders', adminOnly: true },
+  batches: { render: renderPorterBatches, init: initPorterBatches, title: 'Porter Delivery Batches', adminOnly: true },
+  customers: { render: renderCustomers, init: initCustomers, title: 'Customers', adminOnly: true },
+  tasks: { render: renderWorkPortal, init: initWorkPortal, title: 'Work Portal' },
+  team: { render: renderTeamPage, init: initTeamPage, title: 'Team & Staff', adminOnly: true },
+  invoices: { render: renderInvoices, init: initInvoices, title: 'Invoices', adminOnly: true },
+  import: { render: renderImportExport, init: initImportExport, title: 'Import / Export', adminOnly: true },
 };
 
 let currentPage = 'dashboard';
@@ -36,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     await initDB();
     await checkAndSeedDatabase();
+    await checkAndSeedTeam();
     await updateSidebarBadges();
     setupNavigation();
     setupGlobalSearch();
@@ -44,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupSidebarToggle();
     setupKeyboardShortcuts();
     setupCloudSyncPill();
+    setupAuthListeners();
 
     // Cross-device real-time sync listener:
     // When any device modifies data, instantly refresh badges and active view without scroll jumping or wiping inputs!
@@ -57,6 +65,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         porterBatches: 'batches',
         customers: 'customers',
         invoices: 'invoices',
+        workTasks: 'tasks',
+        teamMembers: 'team',
       };
 
       if (currentPage === 'dashboard' || (storeToRouteMap[storeName] && currentPage === storeToRouteMap[storeName])) {
@@ -82,6 +92,10 @@ document.addEventListener('DOMContentLoaded', async () => {
               await initCustomers();
             } else if (currentPage === 'invoices') {
               await initInvoices();
+            } else if (currentPage === 'tasks') {
+              await initWorkPortal();
+            } else if (currentPage === 'team') {
+              await initTeamPage();
             } else if (currentPage === 'dashboard') {
               await initDashboard();
             }
@@ -95,13 +109,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Check URL hash for initial route
-    const hash = window.location.hash.replace('#', '').trim();
-    if (routes[hash]) {
-      navigate(hash);
-    } else {
-      navigate('dashboard');
-    }
+    // Initialize UI for current user or show login screen
+    const user = getCurrentUser();
+    setupAppForRole(user);
 
     // Update storage status indicator in sidebar footer
     const storageEl = document.getElementById('storage-status');
@@ -238,27 +248,119 @@ export async function forceSyncPreloadedData() {
  */
 export async function updateSidebarBadges() {
   try {
-    const pCount = await count('projectOrders');
-    const mCount = await count('materialOrders');
-    const bCount = await count('porterBatches');
+    const [pCount, mCount, bCount, tCount] = await Promise.all([
+      count('projectOrders'),
+      count('materialOrders'),
+      count('porterBatches'),
+      count('workTasks')
+    ]);
 
     const badgeP = document.getElementById('badge-projects');
     const badgeM = document.getElementById('badge-materials');
     const badgeB = document.getElementById('badge-batches');
+    const badgeT = document.getElementById('badge-tasks');
 
     if (badgeP) badgeP.textContent = pCount;
     if (badgeM) badgeM.textContent = mCount;
     if (badgeB) badgeB.textContent = bCount;
+    if (badgeT) badgeT.textContent = tCount;
 
     // Mobile Bottom Navigation Badges
     const bottomP = document.getElementById('bottom-badge-projects');
     const bottomM = document.getElementById('bottom-badge-materials');
     const bottomB = document.getElementById('bottom-badge-batches');
+    const bottomT = document.getElementById('bottom-badge-tasks');
     if (bottomP) bottomP.textContent = pCount;
     if (bottomM) bottomM.textContent = mCount;
     if (bottomB) bottomB.textContent = bCount;
+    if (bottomT) bottomT.textContent = tCount;
   } catch (e) {
     console.warn('Could not update badges', e);
+  }
+}
+
+/**
+ * Setup Role-Based Access Control and Auth Listeners
+ */
+function setupAuthListeners() {
+  window.addEventListener('auth-changed', (e) => {
+    setupAppForRole(e.detail?.user);
+  });
+
+  document.getElementById('btn-logout')?.addEventListener('click', () => {
+    logout();
+  });
+}
+
+export function setupAppForRole(user) {
+  const loginOverlay = document.getElementById('login-overlay-root');
+  const appContainer = document.getElementById('app');
+
+  if (!user) {
+    if (loginOverlay) {
+      loginOverlay.innerHTML = renderLoginPage();
+      loginOverlay.classList.remove('hidden');
+      initLoginPage();
+    }
+    if (appContainer) appContainer.style.display = 'none';
+    return;
+  }
+
+  // User is authenticated
+  if (loginOverlay) {
+    loginOverlay.classList.add('hidden');
+    loginOverlay.innerHTML = '';
+  }
+  if (appContainer) appContainer.style.display = 'flex';
+
+  // Update topbar user pill
+  const nameEl = document.getElementById('auth-user-name');
+  const avatarEl = document.getElementById('auth-avatar');
+  if (nameEl) nameEl.textContent = user.name;
+  if (avatarEl) {
+    avatarEl.textContent = user.name.charAt(0).toUpperCase();
+    avatarEl.style.background = user.avatarColor || '#6366f1';
+  }
+
+  const isUserAdmin = user.role === 'admin';
+
+  // Toggle admin-only navigation links
+  document.querySelectorAll('.admin-only-nav').forEach(el => {
+    el.style.display = isUserAdmin ? '' : 'none';
+  });
+
+  // Adjust work portal navigation label
+  const tasksLabel = document.getElementById('nav-label-tasks');
+  if (tasksLabel) {
+    tasksLabel.textContent = isUserAdmin ? 'Team Tasks' : 'My Work Portal';
+  }
+
+  // Adjust bottom navigation on mobile
+  const bottomProjects = document.querySelector('.bottom-nav-item[data-page="projects"]');
+  const bottomMaterials = document.querySelector('.bottom-nav-item[data-page="materials"]');
+  const bottomBatches = document.querySelector('.bottom-nav-item[data-page="batches"]');
+  const bottomDashboard = document.querySelector('.bottom-nav-item[data-page="dashboard"]');
+
+  if (!isUserAdmin) {
+    if (bottomProjects) bottomProjects.style.display = 'none';
+    if (bottomMaterials) bottomMaterials.style.display = 'none';
+    if (bottomBatches) bottomBatches.style.display = 'none';
+    if (bottomDashboard) bottomDashboard.style.display = 'none';
+  } else {
+    if (bottomProjects) bottomProjects.style.display = '';
+    if (bottomMaterials) bottomMaterials.style.display = '';
+    if (bottomBatches) bottomBatches.style.display = '';
+    if (bottomDashboard) bottomDashboard.style.display = '';
+  }
+
+  // Navigate according to role
+  const hash = window.location.hash.replace('#', '').trim();
+  if (!isUserAdmin) {
+    navigate('tasks');
+  } else if (routes[hash]) {
+    navigate(hash);
+  } else {
+    navigate('dashboard');
   }
 }
 
@@ -266,7 +368,15 @@ export async function updateSidebarBadges() {
  * Navigate to a Page
  */
 export async function navigate(pageId) {
-  if (!routes[pageId]) pageId = 'dashboard';
+  const user = getCurrentUser();
+  const isUserWorker = user && user.role === 'worker';
+
+  // Role guard: Workers cannot access admin-only pages
+  if (isUserWorker && routes[pageId]?.adminOnly) {
+    pageId = 'tasks';
+  } else if (!routes[pageId]) {
+    pageId = isUserWorker ? 'tasks' : 'dashboard';
+  }
   currentPage = pageId;
 
   // Close any open popups on navigation

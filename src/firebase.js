@@ -37,7 +37,9 @@ export const CLOUD_STORES = [
   'customers',
   'invoices',
   'projectTemplates',
-  'catalog'
+  'catalog',
+  'teamMembers',
+  'workTasks'
 ];
 
 /**

@@ -5,7 +5,8 @@
 import {
   getProjectOrders, add, update, remove, getProjectStats, getAll,
   linkProjectToMaterial, getProjectTemplates, saveProjectTemplate,
-  searchCatalog, autoCreateLinkedMaterialOrder, restoreFromTrash
+  searchCatalog, autoCreateLinkedMaterialOrder, restoreFromTrash,
+  syncProjectTask
 } from '../db.js';
 import { seedProjectOrders } from '../seedData.js';
 import {
@@ -240,6 +241,12 @@ function renderProjectTable() {
             ${order.materialOrderId ? `
               <span class="jump-to-material" data-material-id="${order.materialOrderId}" style="font-size:0.68rem; color:var(--accent-primary-light); cursor:pointer; text-decoration:underline;" title="Click to jump to Material Procurement Order #${order.materialOrderId}">
                 (Mat #${order.materialOrderId})
+              </span>
+            ` : ''}
+            ${order.assignedWorkerName ? `
+              <span class="badge" style="font-size:0.68rem; background:rgba(139,92,246,0.12); color:var(--accent-purple); border:1px solid rgba(139,92,246,0.25);" title="Assigned to ${order.assignedWorkerName}">
+                <span class="material-icons-round" style="font-size:11px;">engineering</span>
+                <span>${order.assignedWorkerName}</span>
               </span>
             ` : ''}
           </div>
@@ -633,10 +640,11 @@ export async function openProjectModal(order = null) {
   const container = document.getElementById('modal-container');
   if (!overlay || !container) return;
 
-  // Fetch material orders and project recipes
-  const [materialOrders, recipes] = await Promise.all([
+  // Fetch material orders, project recipes, and team members for delegation
+  const [materialOrders, recipes, teamMembers] = await Promise.all([
     getAll('materialOrders'),
-    getProjectTemplates()
+    getProjectTemplates(),
+    getAll('teamMembers')
   ]);
 
   // Parse initial components if editing an existing order
@@ -770,6 +778,62 @@ export async function openProjectModal(order = null) {
             <option value="completed" ${order?.status === 'completed' ? 'selected' : ''}>Completed</option>
             <option value="delivered" ${order?.status === 'delivered' ? 'selected' : ''}>Delivered</option>
           </select>
+        </div>
+
+        <!-- WORKER ASSIGNMENT & TECHNICAL DELEGATION -->
+        <div class="form-group full-width" style="background:var(--bg-tertiary); padding:14px; border-radius:var(--radius-md); border:1px solid var(--border-primary);">
+          <div style="font-weight:700; color:var(--text-primary); font-size:0.92rem; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+            <span class="material-icons-round" style="color:var(--accent-purple); font-size:20px;">engineering</span>
+            <span>Assign Worker / Technician (Workshop Delegation)</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+            <div>
+              <label class="form-label">Assign Worker</label>
+              <select class="form-select" name="assignedWorkerId">
+                <option value="">— Unassigned (Admin or TBD) —</option>
+                ${teamMembers.map(m => `
+                  <option value="${m.id}" ${order?.assignedWorkerId === m.id ? 'selected' : ''}>
+                    ${m.name} (${m.specialty || m.role})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div>
+              <label class="form-label">Work Type</label>
+              <select class="form-select" name="workType">
+                <option value="Hardware & IoT" ${order?.workType === 'Hardware & IoT' ? 'selected' : ''}>Hardware & IoT Assembly</option>
+                <option value="Assignment / Report Writing" ${order?.workType === 'Assignment / Report Writing' ? 'selected' : ''}>Assignment / Report Writing</option>
+                <option value="Firmware / Coding" ${order?.workType === 'Firmware / Coding' ? 'selected' : ''}>Firmware / Coding</option>
+                <option value="General Assembly" ${order?.workType === 'General Assembly' ? 'selected' : ''}>General Assembly & Testing</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="form-label">Worker Internal Deadline</label>
+              <input class="form-input" type="date" name="workerDeadline" value="${formatDateForInput(order?.workerDeadline || order?.dueDate)}" />
+            </div>
+
+            <div>
+              <label class="form-label">Task Priority</label>
+              <select class="form-select" name="workPriority">
+                <option value="standard" ${order?.workPriority === 'standard' ? 'selected' : ''}>⚡ Standard (2-3 Days)</option>
+                <option value="urgent" ${order?.workPriority === 'urgent' ? 'selected' : ''}>🔥 Urgent (Deliver Today)</option>
+                <option value="relaxed" ${order?.workPriority === 'relaxed' ? 'selected' : ''}>🌱 Relaxed</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label class="form-label">Reference Schematics / Files Link (Drive, GitHub, PDF)</label>
+            <input class="form-input" type="url" name="workerReferenceLinks" value="${order?.workerReferenceLinks || ''}" placeholder="https://drive.google.com/... or https://github.com/..." />
+          </div>
+
+          <div style="margin-top:12px;">
+            <label class="form-label">Worker Technical Instructions & Brief (Zero Financials)</label>
+            <textarea class="form-input" name="workerBrief" rows="2" placeholder="Specific technical instructions for the worker (e.g. Pinout configuration, sensor calibration, enclosure requirements)...">${order?.workerBrief || ''}</textarea>
+          </div>
         </div>
 
         <!-- AUTO-CREATE MATERIAL ORDER CHECKBOX -->
@@ -1078,6 +1142,16 @@ export async function openProjectModal(order = null) {
       data.materialItem = bomItems.map(c => `• ${c.name} (${c.qty || 1})`).join('\n');
     }
 
+    const workerId = data.assignedWorkerId ? parseInt(data.assignedWorkerId, 10) : null;
+    const assignedWorker = teamMembers.find(m => m.id === workerId);
+    data.assignedWorkerId = workerId;
+    data.assignedWorkerName = assignedWorker ? assignedWorker.name : '';
+    data.workType = data.workType || 'Hardware & IoT';
+    data.workerDeadline = data.workerDeadline || '';
+    data.workPriority = data.workPriority || 'standard';
+    data.workerReferenceLinks = data.workerReferenceLinks ? data.workerReferenceLinks.trim() : '';
+    data.workerBrief = data.workerBrief ? data.workerBrief.trim() : '';
+
     const shouldAutoCreateMaterial = document.getElementById('check-auto-create-material')?.checked;
 
     try {
@@ -1095,6 +1169,13 @@ export async function openProjectModal(order = null) {
         savedProjectId = await add('projectOrders', data);
         data.id = savedProjectId;
         showToast('Project Order added successfully', 'success');
+      }
+
+      // Sync delegation task for worker in Work Portal
+      try {
+        await syncProjectTask(data);
+      } catch (taskErr) {
+        console.warn('Sync project task error:', taskErr);
       }
 
       // Auto-create/update linked Material Order under customer's name

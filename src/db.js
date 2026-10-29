@@ -24,7 +24,7 @@ let isInitialized = false;
 
 // === Local IndexedDB Offline Storage & Sync Queue ===
 const DB_NAME = 'project-mafia-offline-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let localDbPromise = null;
 export function getLocalDB() {
@@ -1163,3 +1163,157 @@ export async function getLotPacketData(lotId) {
     masterList
   };
 }
+
+/**
+ * =================================================================
+ * Team Members & Work Tasks (RBAC & Workshop Delegation)
+ * =================================================================
+ */
+
+export async function getTeamMembers() {
+  const members = await getAll('teamMembers');
+  return members.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+export async function getWorkTasks(filters = {}) {
+  let tasks = await getAll('workTasks');
+
+  if (filters.workerId) {
+    const wid = parseInt(filters.workerId, 10);
+    tasks = tasks.filter(t => t.assignedToId === wid);
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    tasks = tasks.filter(t => t.status === filters.status);
+  }
+
+  if (filters.search) {
+    const q = filters.search.toLowerCase().trim();
+    tasks = tasks.filter(t => 
+      (t.title && t.title.toLowerCase().includes(q)) ||
+      (t.projectName && t.projectName.toLowerCase().includes(q)) ||
+      (t.assignedToName && t.assignedToName.toLowerCase().includes(q)) ||
+      (t.type && t.type.toLowerCase().includes(q))
+    );
+  }
+
+  return tasks.sort((a, b) => {
+    // Priority first (urgent -> standard -> relaxed), then due date
+    const priorityWeight = { urgent: 3, standard: 2, relaxed: 1 };
+    const pDiff = (priorityWeight[b.priority] || 2) - (priorityWeight[a.priority] || 2);
+    if (pDiff !== 0) return pDiff;
+    return new Date(a.dueDate || '9999-12-31') - new Date(b.dueDate || '9999-12-31');
+  });
+}
+
+/**
+ * Automatically sync a workTask from a Project Order when an assignment is made
+ */
+export async function syncProjectTask(project) {
+  if (!project) return null;
+  const allTasks = await getAll('workTasks');
+  const existingTask = allTasks.find(t => t.projectId === project.id);
+
+  // If unassigned and no existing task, nothing to do
+  if (!project.assignedWorkerId && !existingTask) {
+    return null;
+  }
+
+  const teamMembers = await getAll('teamMembers');
+  const worker = teamMembers.find(m => m.id === parseInt(project.assignedWorkerId, 10));
+
+  if (existingTask) {
+    if (!project.assignedWorkerId) {
+      // Worker unassigned, remove task or mark unassigned
+      existingTask.assignedToId = null;
+      existingTask.assignedToName = 'Unassigned';
+    } else {
+      existingTask.assignedToId = worker ? worker.id : null;
+      existingTask.assignedToName = worker ? worker.name : 'Unknown';
+    }
+    existingTask.title = project.projectName || `Project #${project.id}`;
+    existingTask.projectName = project.projectName || '';
+    existingTask.type = project.workType || 'Hardware & IoT';
+    existingTask.priority = project.workPriority || 'standard';
+    existingTask.dueDate = project.workerDeadline || project.deadline || '';
+    existingTask.description = project.requirements || project.specs || '';
+    existingTask.adminNotes = project.workerBrief || '';
+    existingTask.referenceLinks = project.workerReferenceLinks ? [project.workerReferenceLinks] : (existingTask.referenceLinks || []);
+    existingTask.updatedAt = new Date().toISOString();
+    await update('workTasks', existingTask);
+    return existingTask;
+  } else if (project.assignedWorkerId) {
+    // Create new task
+    const newTask = {
+      title: project.projectName || `Project #${project.id}`,
+      projectName: project.projectName || '',
+      projectId: project.id,
+      assignedToId: worker ? worker.id : null,
+      assignedToName: worker ? worker.name : 'Unknown',
+      assignedBy: 'Admin',
+      type: project.workType || 'Hardware & IoT',
+      priority: project.workPriority || 'standard',
+      status: 'assigned', // assigned, in_progress, review, completed
+      dueDate: project.workerDeadline || project.deadline || '',
+      description: project.requirements || project.specs || '',
+      adminNotes: project.workerBrief || '',
+      referenceLinks: project.workerReferenceLinks ? [project.workerReferenceLinks] : [],
+      deliverableLink: '',
+      workerNotes: '',
+      comments: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const created = await add('workTasks', newTask);
+    return created;
+  }
+}
+
+/**
+ * Worker updates task status & deliverable link
+ */
+export async function updateTaskStatus(taskId, status, deliverableLink = '', workerNotes = '') {
+  const task = await getById('workTasks', taskId);
+  if (!task) throw new Error('Task not found');
+
+  task.status = status;
+  if (deliverableLink) task.deliverableLink = deliverableLink;
+  if (workerNotes) task.workerNotes = workerNotes;
+  task.updatedAt = new Date().toISOString();
+
+  await update('workTasks', task);
+
+  // If approved and linked to project, update project status
+  if (status === 'completed' && task.projectId) {
+    const project = await getById('projectOrders', task.projectId);
+    if (project && project.orderStatus !== 'delivered') {
+      project.orderStatus = 'completed';
+      await update('projectOrders', project);
+    }
+  }
+
+  return task;
+}
+
+/**
+ * Add a comment to a task (internal communication between Admin and Worker)
+ */
+export async function addTaskComment(taskId, authorName, text) {
+  const task = await getById('workTasks', taskId);
+  if (!task) throw new Error('Task not found');
+
+  if (!Array.isArray(task.comments)) {
+    task.comments = [];
+  }
+
+  task.comments.push({
+    author: authorName,
+    text: text.trim(),
+    time: new Date().toISOString()
+  });
+  task.updatedAt = new Date().toISOString();
+
+  await update('workTasks', task);
+  return task;
+}
+

@@ -20,6 +20,9 @@
   <link rel="stylesheet" href="/src/styles/main.css" />
 </head>
 <body>
+  <!-- Login Screen Mount Root (RBAC) -->
+  <div id="login-overlay-root" class="hidden"></div>
+
   <div id="app">
     <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
@@ -39,38 +42,47 @@
       </div>
 
       <nav class="sidebar-nav">
-        <div class="nav-section">
+        <div class="nav-section" id="nav-section-overview">
           <span class="nav-section-title">Overview</span>
-          <a href="#" class="nav-item active" data-page="dashboard">
+          <a href="#" class="nav-item active admin-only-nav" data-page="dashboard">
             <span class="material-icons-round">dashboard</span>
             <span>Dashboard</span>
           </a>
+          <a href="#" class="nav-item" data-page="tasks">
+            <span class="material-icons-round">assignment</span>
+            <span id="nav-label-tasks">Work Portal</span>
+            <span class="nav-badge" id="badge-tasks">0</span>
+          </a>
         </div>
 
-        <div class="nav-section">
+        <div class="nav-section" id="nav-section-management">
           <span class="nav-section-title">Management</span>
-          <a href="#" class="nav-item" data-page="projects">
+          <a href="#" class="nav-item admin-only-nav" data-page="projects">
             <span class="material-icons-round">inventory_2</span>
             <span>Project Orders</span>
             <span class="nav-badge" id="badge-projects">0</span>
           </a>
-          <a href="#" class="nav-item" data-page="materials">
+          <a href="#" class="nav-item admin-only-nav" data-page="materials">
             <span class="material-icons-round">shopping_cart</span>
             <span>Material Orders</span>
             <span class="nav-badge" id="badge-materials">0</span>
           </a>
-          <a href="#" class="nav-item" data-page="batches">
+          <a href="#" class="nav-item admin-only-nav" data-page="batches">
             <span class="material-icons-round">local_shipping</span>
             <span>Porter Batches</span>
             <span class="nav-badge" id="badge-batches">0</span>
           </a>
-          <a href="#" class="nav-item" data-page="customers">
+          <a href="#" class="nav-item admin-only-nav" data-page="customers">
             <span class="material-icons-round">people</span>
             <span>Customers</span>
           </a>
+          <a href="#" class="nav-item admin-only-nav" data-page="team">
+            <span class="material-icons-round">groups</span>
+            <span>Team & Staff</span>
+          </a>
         </div>
 
-        <div class="nav-section">
+        <div class="nav-section admin-only-nav" id="nav-section-finance">
           <span class="nav-section-title">Finance</span>
           <a href="#" class="nav-item" data-page="invoices">
             <span class="material-icons-round">receipt_long</span>
@@ -78,7 +90,7 @@
           </a>
         </div>
 
-        <div class="nav-section">
+        <div class="nav-section admin-only-nav" id="nav-section-tools">
           <span class="nav-section-title">Tools</span>
           <a href="#" class="nav-item" data-page="import">
             <span class="material-icons-round">upload_file</span>
@@ -123,6 +135,13 @@
             <span class="material-icons-round">add</span>
             <span>Quick Add</span>
           </button>
+          <div class="auth-user-pill" id="auth-user-pill" title="Signed in user">
+            <div class="auth-user-avatar" id="auth-avatar">A</div>
+            <span id="auth-user-name">Admin</span>
+            <button class="btn-logout" id="btn-logout" title="Sign Out">
+              <span class="material-icons-round" style="font-size:16px;">logout</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -143,6 +162,11 @@
       <span class="material-icons-round">inventory_2</span>
       <span>Projects</span>
       <span class="bottom-nav-badge" id="bottom-badge-projects">37</span>
+    </button>
+    <button class="bottom-nav-item" data-page="tasks" title="Tasks">
+      <span class="material-icons-round">assignment</span>
+      <span>Tasks</span>
+      <span class="bottom-nav-badge" id="bottom-badge-tasks">0</span>
     </button>
     <button class="bottom-nav-item" data-page="materials" title="Material Orders">
       <span class="material-icons-round">shopping_cart</span>
