@@ -4,7 +4,7 @@
  * Enhanced with Porter Batches, Mutual Dropdown Closing & Wholesaler Sync
  */
 import {
-  initDB, getAll, bulkAdd, count, add, clearStore,
+  initDB, getAll, bulkAdd, count, add, clearStore, update,
   resetProjectOrdersToSeed, resetMaterialOrdersToSeed
 } from './db.js';
 import { isCloudConnected } from './firebase.js';
@@ -114,6 +114,24 @@ async function checkAndSeedDatabase() {
   if (bCount === 0 && seedPorterBatches && seedPorterBatches.length > 0) {
     console.log('Seeding initial Porter Batches to Firebase Cloud...');
     await bulkAdd('porterBatches', JSON.parse(JSON.stringify(seedPorterBatches)));
+  }
+
+  // Ensure project orders carry batchId & lotListNumber if linked material order has it
+  try {
+    const projects = await getAll('projectOrders');
+    const materials = await getAll('materialOrders');
+    for (const p of projects) {
+      if (p.materialOrderId) {
+        const m = materials.find(mat => mat.id === p.materialOrderId);
+        if (m && m.batchId && (!p.batchId || !p.lotListNumber)) {
+          p.batchId = m.batchId;
+          p.lotListNumber = m.lotListNumber || 1;
+          await update('projectOrders', p);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Sync existing project batch info:', e);
   }
 }
 

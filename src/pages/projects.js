@@ -12,6 +12,7 @@ import {
   formatCurrency, formatDate, normalizeStatus, getStatusLabel,
   showToast, showConfirm, debounce, formatDateForInput
 } from '../utils.js';
+import { openLotPdfModal } from './materials.js';
 
 let currentOrders = [];
 let currentPage = 1;
@@ -210,7 +211,24 @@ function renderProjectTable() {
         <td class="cell-name">${order.name || '—'}</td>
         <td>
           <div style="font-weight:600;">${order.projectName || '—'}</div>
-          ${order.materialOrderId ? `<span style="font-size:0.7rem; color:var(--accent-purple); display:flex; align-items:center; gap:3px;"><span class="material-icons-round" style="font-size:12px;">link</span> Wholesale Auto-Linked</span>` : ''}
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px;">
+            ${order.batchId ? `
+              <span class="badge lot-badge view-lot-packet" data-lot="${order.batchId}" style="cursor:pointer;" title="Click to View / Print ${order.batchId} Multi-Page Packet">
+                <span class="material-icons-round" style="font-size:11px;">local_shipping</span>
+                <span>${order.batchId} • List ${order.lotListNumber || 1}</span>
+              </span>
+            ` : `
+              <span class="badge lot-badge-pending" title="Awaiting Wholesaler Lot Batching">
+                <span class="material-icons-round" style="font-size:10px;">hourglass_top</span>
+                <span>Unbatched</span>
+              </span>
+            `}
+            ${order.materialOrderId ? `
+              <span style="font-size:0.68rem; color:var(--text-tertiary);" title="Linked to Material Procurement Order #${order.materialOrderId}">
+                (Mat #${order.materialOrderId})
+              </span>
+            ` : ''}
+          </div>
         </td>
         <td class="cell-money">${formatCurrency(order.payment)}</td>
         <td class="cell-money positive">${formatCurrency(order.received)}</td>
@@ -223,6 +241,11 @@ function renderProjectTable() {
         <td><span class="status-badge ${status}">${getStatusLabel(status)}</span></td>
         <td>
           <div class="row-actions">
+            ${order.batchId ? `
+              <button title="Print Multi-Page Packet (${order.batchId})" class="btn-print-lot view-lot-packet" data-lot="${order.batchId}" style="color:var(--accent-purple)">
+                <span class="material-icons-round">print</span>
+              </button>
+            ` : ''}
             ${order.phone ? `
               <button title="WhatsApp Client Reminder" class="btn-whatsapp whatsapp-project" data-id="${order.id}">
                 <span class="material-icons-round">chat</span>
@@ -324,6 +347,16 @@ function bindProjectEvents() {
 
   // Delegate actions
   document.getElementById('project-tbody')?.addEventListener('click', async (e) => {
+    // Click on LOT Packet badge or button
+    const lotBtn = e.target.closest('.view-lot-packet');
+    if (lotBtn) {
+      const lotId = lotBtn.dataset.lot;
+      if (lotId) {
+        openLotPdfModal(lotId);
+        return;
+      }
+    }
+
     const editBtn = e.target.closest('.edit-project');
     const deleteBtn = e.target.closest('.delete-project');
     const whatsappBtn = e.target.closest('.whatsapp-project');
@@ -972,6 +1005,8 @@ export async function openProjectModal(order = null) {
         data.id = order.id;
         data.createdAt = order.createdAt;
         data.materialOrderId = order.materialOrderId;
+        data.batchId = order.batchId || '';
+        data.lotListNumber = order.lotListNumber || null;
         await update('projectOrders', data);
         savedProjectId = order.id;
         showToast('Project Order updated successfully', 'success');

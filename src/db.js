@@ -284,21 +284,34 @@ export async function getMaterialStats() {
   const orders = await getAll('materialOrders');
 
   const totalOrders = orders.length;
-  const totalRevenue = orders.reduce((sum, o) => sum + (parseFloat(o.totalPrice) || 0), 0);
-  const totalReceived = orders.reduce((sum, o) => sum + (parseFloat(o.received) || 0), 0);
-  const totalPendingAmount = orders.reduce((sum, o) => sum + (parseFloat(o.balance) || 0), 0);
+
+  // Separate Direct Component Sales (Stream B) from Project Procurement Tickets (Stream A)
+  // Project Procurement tickets are internal sourcing tickets billed under Project Orders.
+  const directSales = orders.filter(o => o.orderType !== 'Project Order' && !o.linkedProjectId);
+  const projectProcurements = orders.filter(o => o.orderType === 'Project Order' || o.linkedProjectId);
+
+  // Direct retail component sales: real customer revenue, received, pending, profit
+  const totalRevenue = directSales.reduce((sum, o) => sum + (parseFloat(o.totalPrice) || 0), 0);
+  const totalReceived = directSales.reduce((sum, o) => sum + (parseFloat(o.received) || 0), 0);
+  const totalPendingAmount = directSales.reduce((sum, o) => sum + (parseFloat(o.balance) || 0), 0);
+  const directProfit = directSales.reduce((sum, o) => sum + (parseFloat(o.netProfit) || 0), 0);
+
+  // Wholesale costs & porter charges across ALL material orders (direct sales + project procurement)
   const totalWholesaleCost = orders.reduce((sum, o) => sum + (parseFloat(o.wholesaleTotal) || 0), 0);
   const totalPorterCost = orders.reduce((sum, o) => sum + (parseFloat(o.porterCharge) || 0), 0);
-  const totalProfit = orders.reduce((sum, o) => sum + (parseFloat(o.netProfit) || 0), 0);
+  const projectWholesaleCost = projectProcurements.reduce((sum, o) => sum + (parseFloat(o.wholesaleTotal) || 0), 0);
 
   return {
     totalOrders,
-    totalRevenue,
-    totalReceived,
-    totalPendingAmount,
-    totalWholesaleCost,
-    totalPorterCost,
-    totalProfit,
+    directSalesCount: directSales.length,
+    projectProcurementCount: projectProcurements.length,
+    totalRevenue,        // Real customer revenue from direct component sales (zero double-counting)
+    totalReceived,       // Real customer receipts from direct component sales
+    totalPendingAmount,  // Real pending balance from direct component sales
+    totalWholesaleCost,  // Total wholesaler bill across all orders
+    totalPorterCost,     // Total porter delivery charges
+    projectWholesaleCost,// Wholesale cost specifically for ready-made projects
+    totalProfit: directProfit, // Direct component sales profit (project profits stay in Project Orders)
     orders,
   };
 }
@@ -311,6 +324,10 @@ export async function getDashboardStats() {
 
   const customerCount = (await getAll('customers')).length;
 
+  // Accurate Combined Financials:
+  // Combined Revenue = Total Project Fees + Direct Component Sales (NO DOUBLE COUNTING)
+  // Combined Profit  = Total Project Profit + Direct Component Profit (NO DOUBLE COUNTING)
+  // Combined Pending = Total Project Pending + Direct Component Pending (NO DOUBLE COUNTING)
   return {
     projectStats,
     materialStats,
@@ -318,6 +335,8 @@ export async function getDashboardStats() {
     combinedProfit: projectStats.totalProfit + materialStats.totalProfit,
     combinedRevenue: projectStats.totalOrderValue + materialStats.totalRevenue,
     combinedPending: projectStats.totalPending + materialStats.totalPendingAmount,
+    totalWholesaleCost: materialStats.totalWholesaleCost,
+    totalPorterCost: materialStats.totalPorterCost,
   };
 }
 
@@ -385,14 +404,32 @@ export async function syncPorterBatchAllocation(batchLotId) {
 
   let totalWholesaleCost = 0;
 
-  for (const order of batchOrders) {
+  for (let i = 0; i < batchOrders.length; i++) {
+    const order = batchOrders[i];
+    if (!order.lotListNumber) {
+      order.lotListNumber = i + 1;
+    }
     totalWholesaleCost += parseFloat(order.wholesaleTotal) || 0;
     if (batch.allocationMode === 'Equal Split') {
       order.porterCharge = deliveryCostPerOrder;
-      const unitPrice = parseFloat(order.totalPrice || order.unitPrice) || 0;
-      const wholesale = parseFloat(order.wholesaleTotal || order.wholesaleRate) || 0;
-      order.netProfit = parseFloat((unitPrice - wholesale - deliveryCostPerOrder).toFixed(2));
+      if (order.orderType !== 'Project Order' && !order.linkedProjectId) {
+        const unitPrice = parseFloat(order.totalPrice || order.unitPrice) || 0;
+        const wholesale = parseFloat(order.wholesaleTotal || order.wholesaleRate) || 0;
+        order.netProfit = parseFloat((unitPrice - wholesale - deliveryCostPerOrder).toFixed(2));
+      } else {
+        order.netProfit = 0;
+      }
       await update('materialOrders', order);
+
+      // Sync batchId and list number to linked project
+      if (order.linkedProjectId) {
+        const proj = await getById('projectOrders', parseInt(order.linkedProjectId, 10));
+        if (proj) {
+          proj.batchId = batchLotId;
+          proj.lotListNumber = order.lotListNumber;
+          await update('projectOrders', proj);
+        }
+      }
     }
   }
 
@@ -532,54 +569,69 @@ export async function autoCreateLinkedMaterialOrder(projectOrder, componentsList
     existingMaterial = allMaterials.find(m => m.linkedProjectId === projectOrder.id);
   }
 
-  const payment = parseFloat(projectOrder.payment) || 0;
-  const received = parseFloat(projectOrder.received) || 0;
+  const materialCost = parseFloat(projectOrder.materialCost) || 0;
 
   if (existingMaterial) {
-    // Update existing linked material order under customer's name
+    // Update existing linked procurement ticket under customer's name
+    // Customer price for parts alone is 0 because the customer is billed for the complete project
     existingMaterial.customerName = projectOrder.name;
+    existingMaterial.orderType = 'Project Order';
     existingMaterial.materialItem = formattedItems || existingMaterial.materialItem;
-    existingMaterial.totalPrice = payment;
-    existingMaterial.received = received;
-    existingMaterial.balance = payment - received;
+    existingMaterial.unitPrice = 0;
+    existingMaterial.totalPrice = 0;
+    existingMaterial.received = 0;
+    existingMaterial.balance = 0;
+    existingMaterial.netProfit = 0;
     existingMaterial.contactNo = projectOrder.phone || existingMaterial.contactNo || '';
-    existingMaterial.notes = `Project: ${projectOrder.projectName}`;
+    existingMaterial.notes = `Project #${projectOrder.id || ''}: ${projectOrder.projectName || ''}`;
     existingMaterial.linkedProjectId = projectOrder.id;
-    // Keep wholesale rate blank / unchanged until wholesaler bill arrives
+    if (projectOrder.batchId) existingMaterial.batchId = projectOrder.batchId;
+    if (projectOrder.lotListNumber) existingMaterial.lotListNumber = projectOrder.lotListNumber;
+    
+    // Sync wholesale cost if project has an updated cost
+    if (materialCost > 0 && (!existingMaterial.wholesaleTotal || existingMaterial.wholesaleTotal === 0)) {
+      existingMaterial.wholesaleTotal = materialCost;
+      existingMaterial.wholesaleRate = materialCost;
+      existingMaterial.wholesalerStatus = 'Received';
+    }
+
     await update('materialOrders', existingMaterial);
     return existingMaterial;
   } else {
-    // Create new linked material order under customer's name
+    // Create new linked procurement ticket
     const newMaterial = {
       customerName: projectOrder.name,
       orderType: 'Project Order',
       orderDate: projectOrder.orderDate || new Date().toISOString().split('T')[0],
       materialItem: formattedItems,
       qty: 1,
-      unitPrice: payment,
-      totalPrice: payment,
-      received: received,
-      balance: payment - received,
+      unitPrice: 0,
+      totalPrice: 0,
+      received: 0,
+      balance: 0,
       wholesaler: 'Rajindra Electronics',
-      wholesaleTotal: 0, // Left blank / pending as requested
-      wholesaleRate: 0,
-      batchId: '',
+      wholesaleTotal: materialCost,
+      wholesaleRate: materialCost,
+      batchId: projectOrder.batchId || '',
+      lotListNumber: projectOrder.lotListNumber || null,
       porterCharge: 0,
       netProfit: 0,
-      wholesalerStatus: 'Pending',
-      orderStatus: 'pending',
+      wholesalerStatus: materialCost > 0 ? 'Received' : 'Pending',
+      orderStatus: projectOrder.status === 'delivered' ? 'delivered' : 'pending',
       contactNo: projectOrder.phone || '',
-      notes: `Project: ${projectOrder.projectName}`,
-      linkedProjectId: projectOrder.id
+      notes: `Project #${projectOrder.id || 'New'}: ${projectOrder.projectName || ''}`,
+      linkedProjectId: projectOrder.id || null
     };
 
     const newId = await add('materialOrders', newMaterial);
     newMaterial.id = newId;
 
     // Link back to project order
-    projectOrder.materialOrderId = newId;
-    projectOrder.materialItem = formattedItems;
-    await update('projectOrders', projectOrder);
+    if (projectOrder.id) {
+      projectOrder.materialOrderId = newId;
+      projectOrder.materialItem = formattedItems;
+      await update('projectOrders', projectOrder);
+    }
 
     return newMaterial;
   }
@@ -704,18 +756,62 @@ export async function getConsolidatedProcurement(filterMode = 'pending') {
   };
 }
 
-export async function batchOrdersIntoLot(orderIds, lotId, porterCharge = 0, wholesaler = 'Rajindra Electronics') {
+export async function batchOrdersIntoLot(orderIds, lotId, porterCharge = 0, wholesaler = 'Rajindra Electronics', allocationMode = 'Equal Split') {
   if (!orderIds || !orderIds.length || !lotId) return 0;
   if (!isInitialized) await initDB();
 
-  for (const id of orderIds) {
+  const count = orderIds.length;
+  const totalPorter = parseFloat(porterCharge) || 0;
+  const costPerOrder = count > 0 ? parseFloat((totalPorter / count).toFixed(2)) : 0;
+  let totalWholesaleCost = 0;
+
+  for (let i = 0; i < orderIds.length; i++) {
+    const id = orderIds[i];
     const order = await getById('materialOrders', id);
     if (order) {
+      const listNum = i + 1; // Numbered sequential list: List 1, List 2, List 3...
       order.batchId = lotId;
       order.lotId = lotId;
+      order.lotListNumber = listNum;
       order.wholesaleStatus = 'received';
       order.wholesalerStatus = 'Received';
+      order.wholesaler = wholesaler || order.wholesaler || 'Rajindra Electronics';
+
+      if (allocationMode === 'Equal Split') {
+        order.porterCharge = costPerOrder;
+      }
+
+      totalWholesaleCost += (parseFloat(order.wholesaleTotal) || 0);
+
+      // Direct component sales calculate profit; project procurement tickets keep profit in Project Orders
+      if (order.orderType !== 'Project Order' && !order.linkedProjectId) {
+        const total = parseFloat(order.totalPrice) || 0;
+        const wholesale = parseFloat(order.wholesaleTotal) || 0;
+        const porter = parseFloat(order.porterCharge) || 0;
+        order.netProfit = parseFloat((total - wholesale - porter).toFixed(2));
+      } else {
+        order.netProfit = 0;
+      }
+
       await update('materialOrders', order);
+
+      // If linked to a Project Order, update project order with batchId & lotListNumber
+      if (order.linkedProjectId) {
+        const proj = await getById('projectOrders', parseInt(order.linkedProjectId, 10));
+        if (proj) {
+          proj.batchId = lotId;
+          proj.lotListNumber = listNum;
+          // Sync wholesale parts cost into project order
+          const wholesale = parseFloat(order.wholesaleTotal) || 0;
+          if (wholesale > 0) {
+            proj.materialCost = wholesale;
+            const pay = parseFloat(proj.payment) || 0;
+            const misc = parseFloat(proj.miscExpenses) || 0;
+            proj.profit = parseFloat((pay - proj.materialCost - misc).toFixed(2));
+          }
+          await update('projectOrders', proj);
+        }
+      }
     }
   }
 
@@ -729,15 +825,148 @@ export async function batchOrdersIntoLot(orderIds, lotId, porterCharge = 0, whol
       lotId,
       date: now,
       wholesaler,
-      totalPorterCharge: parseFloat(porterCharge) || 0,
-      ordersCount: orderIds.length,
-      deliveryCostPerOrder: orderIds.length > 0 ? parseFloat((porterCharge / orderIds.length).toFixed(2)) : 0,
+      totalPorterCharge: totalPorter,
+      ordersCount: count,
+      deliveryCostPerOrder: costPerOrder,
       deliveryStatus: 'Pending',
-      allocationMode: 'Equal Split',
-      totalWholesaleCost: 0,
-      notes: `${lotId} - ${orderIds.length} Consolidated Orders`
+      allocationMode: allocationMode || 'Equal Split',
+      totalWholesaleCost: parseFloat(totalWholesaleCost.toFixed(2)),
+      notes: `${lotId} - ${count} Consolidated Orders`
     });
+  } else {
+    batch.totalPorterCharge = totalPorter;
+    batch.ordersCount = count;
+    batch.deliveryCostPerOrder = costPerOrder;
+    batch.totalWholesaleCost = parseFloat(totalWholesaleCost.toFixed(2));
+    batch.wholesaler = wholesaler;
+    await update('porterBatches', batch);
   }
 
-  return orderIds.length;
+  return count;
+}
+
+/**
+ * Get comprehensive LOT packet data for multi-page PDF generation & workshop slips
+ * Each order is mapped to List 1, List 2, List 3... with its customer, project, and component checklist
+ */
+export async function getLotPacketData(lotId) {
+  if (!isInitialized) await initDB();
+
+  const [batches, allMaterials, allProjects, catalog] = await Promise.all([
+    getAll('porterBatches'),
+    getAll('materialOrders'),
+    getAll('projectOrders'),
+    getCatalog()
+  ]);
+
+  const batch = batches.find(b => b.lotId === lotId) || {
+    lotId,
+    date: new Date().toISOString().split('T')[0],
+    wholesaler: 'Rajindra Electronics',
+    totalPorterCharge: 0,
+    ordersCount: 0,
+    deliveryStatus: 'Pending'
+  };
+
+  // Find all material orders in this lot
+  const lotMaterials = allMaterials.filter(m => m.batchId === lotId || m.lotId === lotId);
+
+  // Sort orders by lotListNumber (or order id)
+  lotMaterials.sort((a, b) => (parseInt(a.lotListNumber, 10) || 999) - (parseInt(b.lotListNumber, 10) || 999));
+
+  // Build mapped lists with customer, project details and parsed component items
+  const mappedLists = lotMaterials.map((m, idx) => {
+    const listNumber = m.lotListNumber || (idx + 1);
+    let linkedProj = null;
+    if (m.linkedProjectId) {
+      linkedProj = allProjects.find(p => String(p.id) === String(m.linkedProjectId));
+    }
+
+    const customerName = m.customerName || linkedProj?.name || 'Customer';
+    const projectTitle = linkedProj?.projectName || m.notes?.replace(/^Project:\s*/i, '') || m.materialItem?.slice(0, 30) || 'Components';
+    const phone = m.contactNo || linkedProj?.phone || '';
+
+    // Parse items into clean array: [{ name, qty }]
+    const rawText = m.materialItem || '';
+    const lines = rawText.split(/[\n•\r,]+/).filter(l => l.trim().length > 0);
+    const components = [];
+
+    lines.forEach(l => {
+      let qty = 1;
+      let name = l.trim();
+      const m1 = l.match(/\((\d+)\)/);
+      const m2 = l.match(/—\s*(\d+)/);
+      const m3 = l.match(/[x×]\s*(\d+)/i);
+      const m4 = l.match(/^(\d+)\s*[x×]\s+/i);
+      const m5 = l.match(/Qty:\s*(\d+)/i);
+
+      if (m1) { qty = parseInt(m1[1], 10); name = l.replace(/\(\d+\)/, ''); }
+      else if (m2) { qty = parseInt(m2[1], 10); name = l.replace(/—\s*\d+/, ''); }
+      else if (m3) { qty = parseInt(m3[1], 10); name = l.replace(/[x×]\s*\d+/i, ''); }
+      else if (m4) { qty = parseInt(m4[1], 10); name = l.replace(/^\d+\s*[x×]\s+/i, ''); }
+      else if (m5) { qty = parseInt(m5[1], 10); name = l.replace(/Qty:\s*\d+/i, ''); }
+
+      name = name.replace(/^[-*•\s]+/, '').replace(/\s*\(\d+\)$/, '').trim();
+      if (name) {
+        components.push({ name, qty });
+      }
+    });
+
+    return {
+      listNumber,
+      orderId: m.id,
+      linkedProjectId: m.linkedProjectId || null,
+      customerName,
+      projectTitle,
+      phone,
+      orderDate: m.orderDate || '',
+      wholesaleTotal: parseFloat(m.wholesaleTotal) || 0,
+      orderStatus: m.orderStatus || 'pending',
+      rawText,
+      components: components.length > 0 ? components : [{ name: rawText || 'Hardware Kit', qty: 1 }]
+    };
+  });
+
+  // Build Master Sourcing Checklist (Aggregated across all lists for Rajindra Electronics)
+  const masterMap = new Map();
+  mappedLists.forEach(list => {
+    list.components.forEach(item => {
+      const key = item.name.toLowerCase().trim();
+      if (!masterMap.has(key)) {
+        const matched = catalog.find(c => c.name.toLowerCase() === key || c.name.toLowerCase().includes(key));
+        masterMap.set(key, {
+          name: matched ? matched.name : item.name,
+          category: matched ? matched.category : 'General',
+          wholesaleUnitCost: matched ? (matched.wholesale_unit_cost || 0) : 0,
+          totalQty: 0,
+          lists: []
+        });
+      }
+      const record = masterMap.get(key);
+      record.totalQty += item.qty;
+      record.lists.push({
+        listNumber: list.listNumber,
+        customerName: list.customerName,
+        qty: item.qty
+      });
+    });
+  });
+
+  const masterList = Array.from(masterMap.values()).sort((a, b) => b.totalQty - a.totalQty);
+  const totalUnits = masterList.reduce((sum, item) => sum + item.totalQty, 0);
+  const totalWholesaleCost = lotMaterials.reduce((sum, m) => sum + (parseFloat(m.wholesaleTotal) || 0), 0);
+
+  return {
+    batch,
+    lotId,
+    wholesaler: batch.wholesaler || 'Rajindra Electronics',
+    date: batch.date || new Date().toISOString().split('T')[0],
+    totalPorterCharge: parseFloat(batch.totalPorterCharge) || 0,
+    totalWholesaleCost: parseFloat(totalWholesaleCost.toFixed(2)),
+    deliveryCostPerOrder: parseFloat(batch.deliveryCostPerOrder) || 0,
+    orderCount: mappedLists.length,
+    totalUnits,
+    lists: mappedLists,
+    masterList
+  };
 }

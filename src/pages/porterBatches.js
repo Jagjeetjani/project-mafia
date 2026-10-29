@@ -4,6 +4,7 @@
  */
 import { getPorterBatches, getAll, add, update, remove, syncPorterBatchAllocation } from '../db.js';
 import { formatCurrency, formatDate, showToast, showConfirm, formatDateForInput } from '../utils.js';
+import { openLotPdfModal } from './materials.js';
 
 let currentBatches = [];
 let searchQuery = '';
@@ -181,6 +182,9 @@ function renderBatchTable() {
       <td class="cell-money" style="color:var(--text-secondary)">${formatCurrency(b.totalWholesaleCost)}</td>
       <td>
         <div class="row-actions">
+          <button title="Print Multi-Page Packet & Numbered Lists" class="btn-print-lot-packet" data-lot="${b.lotId}" style="color:var(--accent-purple)">
+            <span class="material-icons-round">print</span>
+          </button>
           <button title="Auto-Sync & Re-Split to Orders" class="btn-sync-batch" data-lot="${b.lotId}" style="color:var(--accent-green)">
             <span class="material-icons-round">sync</span>
           </button>
@@ -212,9 +216,16 @@ function bindBatchEvents() {
   });
 
   document.getElementById('batches-tbody')?.addEventListener('click', async (e) => {
+    const printBtn = e.target.closest('.btn-print-lot-packet');
     const syncBtn = e.target.closest('.btn-sync-batch');
     const editBtn = e.target.closest('.btn-edit-batch');
     const deleteBtn = e.target.closest('.btn-delete-batch');
+
+    if (printBtn) {
+      const lotId = printBtn.dataset.lot;
+      if (lotId) openLotPdfModal(lotId);
+      return;
+    }
 
     if (syncBtn) {
       const lotId = syncBtn.dataset.lot;

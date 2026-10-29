@@ -127,8 +127,8 @@ export async function initDashboard() {
           <span class="material-icons-round">precision_manufacturing</span>
         </div>
       </div>
-      <div class="stat-card-label">Material Cost</div>
-      <div class="stat-card-value">${formatCurrencyCompact(stats.projectStats.totalMaterialCost + stats.materialStats.totalWholesaleCost)}</div>
+      <div class="stat-card-label">Wholesale Parts Cost</div>
+      <div class="stat-card-value">${formatCurrencyCompact(stats.totalWholesaleCost || stats.materialStats.totalWholesaleCost)}</div>
     </div>
   `;
 
