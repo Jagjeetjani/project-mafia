@@ -84,6 +84,29 @@ export function cleanCustomerName(name) {
   return trimmed.replace(/\s+\d+$|\s+[A-Za-z]$/, '').trim();
 }
 
+// Sanitize phone number for direct WhatsApp links (e.g. +91 98882 84126 -> 919888284126)
+export function sanitizePhoneForWhatsApp(phone) {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 10) return '91' + digits;
+  if (digits.length === 12 && digits.startsWith('91')) return digits;
+  return digits;
+}
+
+// Calculate payment aging (>7 days warning, >14 days critical)
+export function getPaymentAging(order) {
+  const pending = parseFloat(order.pending !== undefined ? order.pending : order.balance) || 0;
+  if (pending <= 0) return null;
+  const dateStr = order.orderDate || order.createdAt;
+  if (!dateStr) return null;
+  const orderTime = new Date(dateStr).getTime();
+  if (isNaN(orderTime)) return null;
+  const diffDays = Math.floor((Date.now() - orderTime) / (1000 * 60 * 60 * 24));
+  if (diffDays >= 14) return { days: diffDays, level: 'critical', label: `>${diffDays}d Overdue` };
+  if (diffDays >= 7) return { days: diffDays, level: 'warning', label: `>${diffDays}d Due` };
+  return null;
+}
+
 
 // Get status label
 export function getStatusLabel(status) {
@@ -216,6 +239,7 @@ export function parseCurrency(str) {
 // Show toast notification
 export function showToast(message, type = 'success') {
   const container = document.getElementById('toast-container');
+  if (!container) return;
   const icons = {
     success: 'check_circle',
     error: 'error',
@@ -232,8 +256,46 @@ export function showToast(message, type = 'success') {
 
   container.appendChild(toast);
   setTimeout(() => {
+    if (toast.parentElement) toast.remove();
+  }, 3500);
+}
+
+// Show persistent toast with an UNDO action button
+export function showUndoToast(message, onUndo, duration = 8000) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast warning';
+  toast.style.display = 'flex';
+  toast.style.alignItems = 'center';
+  toast.style.gap = '10px';
+  toast.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+  toast.style.background = 'var(--bg-card)';
+  toast.style.boxShadow = '0 8px 24px rgba(0,0,0,0.4)';
+
+  toast.innerHTML = `
+    <span class="material-icons-round" style="color:var(--text-warning); font-size:20px;">delete_outline</span>
+    <span class="toast-message" style="flex:1; font-size:0.88rem; color:var(--text-primary);">${message}</span>
+    <button class="btn-undo-action" style="background:var(--accent-purple); color:white; border:none; padding:4px 12px; border-radius:6px; font-weight:700; font-size:0.78rem; cursor:pointer; letter-spacing:0.5px;">
+      UNDO
+    </button>
+  `;
+
+  const undoBtn = toast.querySelector('.btn-undo-action');
+  undoBtn.onclick = async () => {
+    undoBtn.disabled = true;
+    undoBtn.textContent = 'Restoring...';
+    if (typeof onUndo === 'function') {
+      await onUndo();
+    }
     toast.remove();
-  }, 3000);
+  };
+
+  container.appendChild(toast);
+  setTimeout(() => {
+    if (toast.parentElement) toast.remove();
+  }, duration);
 }
 
 // Confirm dialog

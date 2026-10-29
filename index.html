@@ -173,6 +173,17 @@
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
+  <!-- Register PWA Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
+          console.warn('PWA SW registration failed:', err);
+        });
+      });
+    }
+  </script>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

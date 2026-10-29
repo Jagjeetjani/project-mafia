@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupCloudSyncPill();
 
     // Cross-device real-time sync listener:
-    // When any device modifies data, instantly refresh badges and active view!
+    // When any device modifies data, instantly refresh badges and active view without scroll jumping or wiping inputs!
     window.addEventListener('cloud-data-changed', async (e) => {
       const { storeName } = e.detail || {};
       await updateSidebarBadges();
@@ -62,15 +62,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (currentPage === 'dashboard' || (storeToRouteMap[storeName] && currentPage === storeToRouteMap[storeName])) {
         const overlay = document.getElementById('modal-overlay');
         if (!overlay || overlay.classList.contains('hidden')) {
-          const container = document.getElementById('page-container');
-          if (container && routes[currentPage]) {
-            container.innerHTML = routes[currentPage].render();
-            try {
-              await routes[currentPage].init();
-            } catch (err) {
-              console.error(`Error refreshing page ${currentPage}:`, err);
+          // If the user is actively typing in a search box or input, do not interrupt them!
+          const activeEl = document.activeElement;
+          const isUserTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+          if (isUserTyping) return;
+
+          // Preserve scroll position
+          const scrollY = window.scrollY;
+
+          // Surgical refresh: re-run the page's init() to update tables/stats without destroying outer DOM
+          try {
+            if (currentPage === 'projects') {
+              await initProjectOrders();
+            } else if (currentPage === 'materials') {
+              await initMaterialOrders();
+            } else if (currentPage === 'batches') {
+              await initPorterBatches();
+            } else if (currentPage === 'customers') {
+              await initCustomers();
+            } else if (currentPage === 'invoices') {
+              await initInvoices();
+            } else if (currentPage === 'dashboard') {
+              await initDashboard();
             }
+          } catch (err) {
+            console.error(`Error surgically refreshing page ${currentPage}:`, err);
           }
+
+          // Restore scroll position instantly
+          window.scrollTo({ top: scrollY, behavior: 'instant' });
         }
       }
     });

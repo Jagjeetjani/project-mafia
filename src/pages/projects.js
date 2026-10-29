@@ -5,14 +5,16 @@
 import {
   getProjectOrders, add, update, remove, getProjectStats, getAll,
   linkProjectToMaterial, getProjectTemplates, saveProjectTemplate,
-  searchCatalog, autoCreateLinkedMaterialOrder
+  searchCatalog, autoCreateLinkedMaterialOrder, restoreFromTrash
 } from '../db.js';
 import { seedProjectOrders } from '../seedData.js';
 import {
   formatCurrency, formatDate, normalizeStatus, getStatusLabel,
-  showToast, showConfirm, debounce, formatDateForInput
+  showToast, showConfirm, debounce, formatDateForInput,
+  sanitizePhoneForWhatsApp, getPaymentAging, showUndoToast
 } from '../utils.js';
 import { openLotPdfModal } from './materials.js';
+import { navigate } from '../main.js';
 
 let currentOrders = [];
 let currentPage = 1;
@@ -55,6 +57,8 @@ export function renderProjectOrders() {
             <option value="in-assembly">In Assembly</option>
             <option value="waiting">Waiting for Material</option>
             <option value="pending">Pending</option>
+            <option value="aging-7">⏰ Overdue (>7 Days)</option>
+            <option value="aging-14">🚨 Critical (>14 Days)</option>
           </select>
         </div>
       </div>
@@ -93,13 +97,23 @@ export async function initProjectOrders() {
 }
 
 async function loadProjectOrders() {
-  currentOrders = await getProjectOrders({
+  const isAgingFilter = statusFilter === 'aging-7' || statusFilter === 'aging-14';
+  const backendFilter = isAgingFilter ? '' : statusFilter;
+
+  let orders = await getProjectOrders({
     search: searchQuery,
-    status: statusFilter,
+    status: backendFilter,
     sortBy,
     sortDir,
   });
 
+  if (statusFilter === 'aging-7') {
+    orders = orders.filter(o => !!getPaymentAging(o));
+  } else if (statusFilter === 'aging-14') {
+    orders = orders.filter(o => getPaymentAging(o)?.level === 'critical');
+  }
+
+  currentOrders = orders;
   renderProjectTable();
 }
 
@@ -224,7 +238,7 @@ function renderProjectTable() {
               </span>
             `}
             ${order.materialOrderId ? `
-              <span style="font-size:0.68rem; color:var(--text-tertiary);" title="Linked to Material Procurement Order #${order.materialOrderId}">
+              <span class="jump-to-material" data-material-id="${order.materialOrderId}" style="font-size:0.68rem; color:var(--accent-primary-light); cursor:pointer; text-decoration:underline;" title="Click to jump to Material Procurement Order #${order.materialOrderId}">
                 (Mat #${order.materialOrderId})
               </span>
             ` : ''}
@@ -232,7 +246,20 @@ function renderProjectTable() {
         </td>
         <td class="cell-money">${formatCurrency(order.payment)}</td>
         <td class="cell-money positive">${formatCurrency(order.received)}</td>
-        <td class="cell-money ${pending > 0 ? 'negative' : ''}">${formatCurrency(order.pending)}</td>
+        <td class="cell-money ${pending > 0 ? 'negative' : ''}">
+          <div>${formatCurrency(order.pending)}</div>
+          ${(() => {
+            const aging = getPaymentAging(order);
+            if (!aging) return '';
+            return `
+              <div style="margin-top:2px;">
+                <span style="font-size:0.65rem; padding:1px 5px; border-radius:4px; font-weight:700; background:${aging.level === 'critical' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}; color:${aging.level === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)'};" title="${aging.days} days elapsed since order placed without full payment">
+                  ${aging.label}
+                </span>
+              </div>
+            `;
+          })()}
+        </td>
         <td class="cell-secondary">${formatDate(order.orderDate)}</td>
         <td class="cell-secondary">${formatDate(order.dueDate)}</td>
         <td class="cell-money">${formatCurrency(order.materialCost)}</td>
@@ -357,6 +384,24 @@ function bindProjectEvents() {
       }
     }
 
+    // 1-Click jump to linked Material Procurement Order
+    const jumpMat = e.target.closest('.jump-to-material');
+    if (jumpMat) {
+      const matId = parseInt(jumpMat.dataset.materialId, 10);
+      if (matId) {
+        await navigate('materials');
+        setTimeout(() => {
+          const row = document.querySelector(`tr[data-id="${matId}"]`);
+          if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.style.background = 'rgba(99,102,241,0.25)';
+            setTimeout(() => { row.style.background = ''; }, 2200);
+          }
+        }, 250);
+        return;
+      }
+    }
+
     const editBtn = e.target.closest('.edit-project');
     const deleteBtn = e.target.closest('.delete-project');
     const whatsappBtn = e.target.closest('.whatsapp-project');
@@ -382,13 +427,24 @@ function bindProjectEvents() {
 
     if (deleteBtn) {
       const id = parseInt(deleteBtn.dataset.id);
-      const confirmed = await showConfirm('Delete Order', 'Are you sure you want to delete this project order? This action cannot be undone.');
+      const order = currentOrders.find(o => o.id === id);
+      const confirmed = await showConfirm('Delete Order', `Are you sure you want to delete project order #${id} (${order?.name || ''})?`);
       if (confirmed) {
-        await remove('projectOrders', id);
-        showToast('Order deleted successfully');
+        const res = await remove('projectOrders', id);
         await loadProjectOrders();
         renderProjectStats();
         updateBadges();
+
+        // 1-Click Undo Toast
+        showUndoToast(`Deleted project order #${id} (${order?.name || ''})`, async () => {
+          if (res?.trashRecordId) {
+            await restoreFromTrash(res.trashRecordId);
+            showToast(`Restored order #${id} (${order?.name || ''})!`, 'success');
+            await loadProjectOrders();
+            renderProjectStats();
+            updateBadges();
+          }
+        });
       }
     }
   });
@@ -402,7 +458,7 @@ function openWhatsAppDialog(order) {
   const container = document.getElementById('modal-container');
   if (!overlay || !container) return;
 
-  const cleanPhone = (order.phone || '').replace(/\D/g, '');
+  const cleanPhone = sanitizePhoneForWhatsApp(order.phone);
   const pending = parseFloat(order.pending) || 0;
 
   const msgReady = `Hi ${order.name}! Your project "${order.projectName}" is tested and ready for pickup! Remaining balance: ${formatCurrency(pending)}. Thanks, Project Mafia.`;
@@ -415,9 +471,34 @@ function openWhatsAppDialog(order) {
       <button class="modal-close" id="modal-close"><span class="material-icons-round">close</span></button>
     </div>
     <div class="modal-body">
-      <p style="color:var(--text-secondary); margin-bottom:16px;">Send instant WhatsApp update to <strong>+91 ${order.phone}</strong>:</p>
+      <p style="color:var(--text-secondary); margin-bottom:16px;">Send instant WhatsApp update to <strong>+${cleanPhone}</strong>:</p>
       
       <div style="display:flex; flex-direction:column; gap:12px;">
+        <div style="background:var(--bg-tertiary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-primary);">
+          <strong style="color:var(--accent-green); display:block; margin-bottom:6px;">Option 1: Project Ready for Pickup</strong>
+          <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:10px;">"${msgReady}"</p>
+          <a href="https://wa.me/${cleanPhone}?text=${encodeURIComponent(msgReady)}" target="_blank" class="btn-primary" style="background:#25D366; border:none; color:white; display:inline-flex;">
+            <span class="material-icons-round">send</span> Send Ready Update
+          </a>
+        </div>
+
+        <div style="background:var(--bg-tertiary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-primary);">
+          <strong style="color:var(--accent-orange); display:block; margin-bottom:6px;">Option 2: Pending Payment Reminder</strong>
+          <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:10px;">"${msgReminder}"</p>
+          <a href="https://wa.me/${cleanPhone}?text=${encodeURIComponent(msgReminder)}" target="_blank" class="btn-secondary" style="display:inline-flex;">
+            <span class="material-icons-round">send</span> Send Payment Reminder
+          </a>
+        </div>
+
+        <div style="background:var(--bg-tertiary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-primary);">
+          <strong style="color:var(--accent-blue); display:block; margin-bottom:6px;">Option 3: Component Sourcing Update</strong>
+          <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:10px;">"${msgWaiting}"</p>
+          <a href="https://wa.me/${cleanPhone}?text=${encodeURIComponent(msgWaiting)}" target="_blank" class="btn-secondary" style="display:inline-flex;">
+            <span class="material-icons-round">send</span> Send Sourcing Update
+          </a>
+        </div>
+      </div>
+    </div>
         <div style="background:var(--bg-tertiary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-primary);">
           <strong style="color:var(--accent-green); display:block; margin-bottom:6px;">Option 1: Project Ready for Pickup</strong>
           <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:10px;">"${msgReady}"</p>

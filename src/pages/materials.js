@@ -4,12 +4,14 @@
  */
 import {
   getMaterialOrders, add, update, remove, getMaterialStats, getAll, getById,
-  resetMaterialOrdersToSeed, getConsolidatedProcurement, batchOrdersIntoLot, getLotPacketData, searchCatalog
+  resetMaterialOrdersToSeed, getConsolidatedProcurement, batchOrdersIntoLot, getLotPacketData, searchCatalog,
+  restoreFromTrash
 } from '../db.js';
 import { seedMaterialOrders } from '../seedData.js';
 import {
   formatCurrency, formatDate, normalizeStatus, getStatusLabel,
-  showToast, showConfirm, debounce, formatDateForInput
+  showToast, showConfirm, debounce, formatDateForInput,
+  sanitizePhoneForWhatsApp, getPaymentAging, showUndoToast
 } from '../utils.js';
 import { openInvoiceStudioModal, showInvoicePreview } from './invoices.js';
 import { navigate } from '../main.js';
@@ -65,6 +67,8 @@ export function renderMaterialOrders() {
           </select>
           <select class="filter-select" id="material-status-filter">
             <option value="">All Status</option>
+            <option value="aging-7">⏰ Overdue (>7 Days)</option>
+            <option value="aging-14">🚨 Critical (>14 Days)</option>
             <option value="delivered">Delivered</option>
             <option value="completed">Completed</option>
             <option value="in-assembly">In Assembly</option>
@@ -133,15 +137,26 @@ export async function initMaterialOrders() {
 }
 
 async function loadMaterialOrders() {
+  const isAgingFilter = statusFilter === 'aging-7' || statusFilter === 'aging-14';
+  const backendFilter = isAgingFilter ? '' : statusFilter;
+
   const [orders, allInvoices] = await Promise.all([
     getMaterialOrders({
       search: searchQuery,
       orderType: typeFilter,
-      orderStatus: statusFilter,
+      orderStatus: backendFilter,
     }),
     getAll('invoices')
   ]);
-  currentOrders = orders;
+
+  let filtered = orders;
+  if (statusFilter === 'aging-7') {
+    filtered = filtered.filter(o => !!getPaymentAging(o));
+  } else if (statusFilter === 'aging-14') {
+    filtered = filtered.filter(o => getPaymentAging(o)?.level === 'critical');
+  }
+
+  currentOrders = filtered;
   currentInvoices = allInvoices;
 
   renderMaterialTable();
@@ -296,7 +311,7 @@ function renderMaterialTable() {
               </span>
             `}
             ${order.linkedProjectId ? `
-              <span style="font-size:0.68rem; color:var(--accent-purple);" title="Linked to Project Order #${order.linkedProjectId}">
+              <span class="jump-to-project" data-project-id="${order.linkedProjectId}" style="font-size:0.68rem; color:var(--accent-purple); cursor:pointer; text-decoration:underline;" title="Click to jump to Project Order #${order.linkedProjectId}">
                 (Proj #${order.linkedProjectId})
               </span>
             ` : ''}
@@ -335,7 +350,20 @@ function renderMaterialTable() {
           ${isProjectOrder ? `<span style="font-size:0.72rem; color:var(--accent-purple); font-weight:700;" title="Customer payment is tracked under Project Orders">Project Billed</span>` : formatCurrency(order.totalPrice)}
         </td>
         <td class="cell-money ${parseFloat(order.balance) > 0 ? 'negative' : ''}">
-          ${isProjectOrder ? '—' : formatCurrency(order.balance)}
+          ${isProjectOrder ? '—' : `
+            <div>${formatCurrency(order.balance)}</div>
+            ${(() => {
+              const aging = getPaymentAging(order);
+              if (!aging) return '';
+              return `
+                <div style="margin-top:2px;">
+                  <span style="font-size:0.65rem; padding:1px 5px; border-radius:4px; font-weight:700; background:${aging.level === 'critical' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}; color:${aging.level === 'critical' ? 'var(--text-danger)' : 'var(--text-warning)'};" title="${aging.days} days elapsed without full payment">
+                    ${aging.label}
+                  </span>
+                </div>
+              `;
+            })()}
+          `}
         </td>
         <td class="cell-money" style="font-weight:600;">${formatCurrency(order.wholesaleTotal)}</td>
         <td class="cell-money">${formatCurrency(order.porterCharge)}</td>
@@ -345,6 +373,11 @@ function renderMaterialTable() {
         <td><span class="status-badge ${status}">${getStatusLabel(status)}</span></td>
         <td>
           <div class="row-actions">
+            ${order.contactNo ? `
+              <button title="WhatsApp Customer" class="whatsapp-material" data-id="${order.id}" style="color:#25D366">
+                <span class="material-icons-round">chat</span>
+              </button>
+            ` : ''}
             ${order.batchId ? `
               <button title="Print Multi-Page Packet (${order.batchId})" class="btn-print-lot view-lot-packet" data-lot="${order.batchId}" style="color:var(--accent-purple)">
                 <span class="material-icons-round">print</span>
@@ -501,8 +534,34 @@ function bindMaterialEvents() {
       return;
     }
 
+    // 1-Click jump to linked Project Order
+    const jumpProj = e.target.closest('.jump-to-project');
+    if (jumpProj) {
+      const projId = parseInt(jumpProj.dataset.projectId, 10);
+      if (projId) {
+        await navigate('projects');
+        setTimeout(() => {
+          const row = document.querySelector(`tr[data-id="${projId}"]`);
+          if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.style.background = 'rgba(168,85,247,0.25)';
+            setTimeout(() => { row.style.background = ''; }, 2200);
+          }
+        }, 250);
+        return;
+      }
+    }
+
     const editBtn = e.target.closest('.edit-material');
     const deleteBtn = e.target.closest('.delete-material');
+    const whatsappBtn = e.target.closest('.whatsapp-material');
+
+    if (whatsappBtn) {
+      const id = parseInt(whatsappBtn.dataset.id, 10);
+      const order = currentOrders.find(o => o.id === id);
+      if (order) openMaterialWhatsAppDialog(order);
+      return;
+    }
 
     if (editBtn) {
       const id = parseInt(editBtn.dataset.id);
@@ -512,15 +571,26 @@ function bindMaterialEvents() {
 
     if (deleteBtn) {
       const id = parseInt(deleteBtn.dataset.id);
-      const confirmed = await showConfirm('Delete Material Order', 'Are you sure you want to delete this material order?');
+      const order = currentOrders.find(o => o.id === id);
+      const confirmed = await showConfirm('Delete Material Order', `Are you sure you want to delete material order #${id} (${order?.customerName || ''})?`);
       if (confirmed) {
-        await remove('materialOrders', id);
+        const res = await remove('materialOrders', id);
         selectedOrderIds.delete(id);
         updateBatchBar();
-        showToast('Material order deleted');
         await loadMaterialOrders();
         renderMaterialStats();
         updateBadges();
+
+        // 1-Click Undo Toast
+        showUndoToast(`Deleted material order #${id} (${order?.customerName || ''})`, async () => {
+          if (res?.trashRecordId) {
+            await restoreFromTrash(res.trashRecordId);
+            showToast(`Restored material order #${id} (${order?.customerName || ''})!`, 'success');
+            await loadMaterialOrders();
+            renderMaterialStats();
+            updateBadges();
+          }
+        });
       }
     }
   });
@@ -575,6 +645,61 @@ function bindMaterialEvents() {
     updateBatchBar();
     renderMaterialTable();
   });
+}
+
+/**
+ * 1-Click WhatsApp Client Messenger for Material / Component Orders
+ */
+function openMaterialWhatsAppDialog(order) {
+  const overlay = document.getElementById('modal-overlay');
+  const container = document.getElementById('modal-container');
+  if (!overlay || !container) return;
+
+  const cleanPhone = sanitizePhoneForWhatsApp(order.contactNo);
+  const balance = parseFloat(order.balance) || 0;
+
+  const msgReady = `Hi ${order.customerName || 'Customer'}! Your order for "${order.materialItem || 'components'}" is ready for pickup/dispatch! Remaining balance: ${formatCurrency(balance)}. Thanks, Project Mafia.`;
+  const msgReminder = `Hi ${order.customerName || 'Customer'}, payment reminder regarding your component order "${order.materialItem || 'components'}". Outstanding balance: ${formatCurrency(balance)}. Thanks!`;
+
+  container.innerHTML = `
+    <div class="modal-header">
+      <h2><span class="material-icons-round" style="color:#25D366; vertical-align:middle;">chat</span> WhatsApp Message — ${order.customerName || 'Customer'}</h2>
+      <button class="modal-close" id="modal-close"><span class="material-icons-round">close</span></button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-secondary); margin-bottom:16px;">Send instant WhatsApp update to <strong>+${cleanPhone}</strong>:</p>
+      
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div style="background:var(--bg-tertiary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-primary);">
+          <strong style="color:var(--accent-green); display:block; margin-bottom:6px;">Option 1: Order Ready for Pickup / Dispatch</strong>
+          <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:10px;">"${msgReady}"</p>
+          <a href="https://wa.me/${cleanPhone}?text=${encodeURIComponent(msgReady)}" target="_blank" class="btn-primary" style="background:#25D366; border:none; color:white; display:inline-flex;">
+            <span class="material-icons-round">send</span>
+            <span>Send Order Ready</span>
+          </a>
+        </div>
+
+        ${balance > 0 ? `
+          <div style="background:var(--bg-tertiary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-primary);">
+            <strong style="color:var(--text-warning); display:block; margin-bottom:6px;">Option 2: Payment Reminder (${formatCurrency(balance)})</strong>
+            <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:10px;">"${msgReminder}"</p>
+            <a href="https://wa.me/${cleanPhone}?text=${encodeURIComponent(msgReminder)}" target="_blank" class="btn-primary" style="background:#25D366; border:none; color:white; display:inline-flex;">
+              <span class="material-icons-round">send</span>
+              <span>Send Payment Reminder</span>
+            </a>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+
+  overlay.classList.remove('hidden');
+  document.getElementById('modal-close')?.addEventListener('click', () => {
+    overlay.classList.add('hidden');
+  });
+  overlay.onclick = (e) => {
+    if (e.target === overlay) overlay.classList.add('hidden');
+  };
 }
 
 /**
